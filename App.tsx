@@ -2,8 +2,9 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import InventoryTable from './components/InventoryTable';
 import SupervisionForm from './components/SupervisionForm';
+import TemperatureMonitoring from './components/TemperatureMonitoring';
 import Login from './components/Login';
-import { Department, InventoryItem, AppView, SupervisionSection, SupervisionItem, SupervisionSignatures } from './types';
+import { Department, InventoryItem, AppView, SupervisionSection, SupervisionItem, SupervisionSignatures, TemperatureEntry } from './types';
 import { ICU_SHEET_URL, IBS_SHEET_URL, MONTHS, YEARS, CLOUD_SYNC_ID } from './constants';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -16,12 +17,15 @@ const STORAGE_KEY_SUP_ICU = 'rs_supervision_icu_v1';
 const STORAGE_KEY_SUP_IBS = 'rs_supervision_ibs_v1';
 const STORAGE_KEY_SIG_ICU = 'rs_signatures_icu_v1';
 const STORAGE_KEY_SIG_IBS = 'rs_signatures_ibs_v1';
+const STORAGE_KEY_TEMP_ICU = 'rs_temperature_icu_v1';
+const STORAGE_KEY_TEMP_IBS = 'rs_temperature_ibs_v1';
 const STORAGE_KEY_TIMESTAMP = 'rs_inventory_last_update';
 const STORAGE_KEY_AUTH = 'rs_inventory_auth_status';
 const STORAGE_KEY_CUSTOM_UNITS = 'rs_inventory_custom_units';
 const STORAGE_KEY_CUSTOM_DATA = 'rs_inventory_custom_data';
 const STORAGE_KEY_CUSTOM_SUP = 'rs_supervision_custom_data';
 const STORAGE_KEY_CUSTOM_SIG = 'rs_signatures_custom_data';
+const STORAGE_KEY_CUSTOM_TEMP = 'rs_temperature_custom_data';
 
 const INITIAL_SIGNATURES: SupervisionSignatures = {
   supervisor: { nama: '', nip: '', timestamp: '' },
@@ -205,6 +209,21 @@ const App: React.FC = () => {
     return saved ? JSON.parse(saved) : {};
   });
 
+  const [icuTemperature, setIcuTemperature] = useState<TemperatureEntry[]>(() => {
+    const saved = localStorage.getItem(STORAGE_KEY_TEMP_ICU);
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  const [ibsTemperature, setIbsTemperature] = useState<TemperatureEntry[]>(() => {
+    const saved = localStorage.getItem(STORAGE_KEY_TEMP_IBS);
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  const [customTemperature, setCustomTemperature] = useState<Record<string, TemperatureEntry[]>>(() => {
+    const saved = localStorage.getItem(STORAGE_KEY_CUSTOM_TEMP);
+    return saved ? JSON.parse(saved) : {};
+  });
+
   const parseGvizResponse = (responseText: string): InventoryItem[] => {
     try {
       const jsonString = responseText.match(/setResponse\((.*)\);/)?.[1];
@@ -273,6 +292,7 @@ const App: React.FC = () => {
       const timestamp = Date.now();
       const payload = {
         icuData, ibsData, icuSupervision, ibsSupervision, icuSignatures, ibsSignatures,
+        icuTemperature, ibsTemperature, customUnits, customData, customSupervision, customSignatures, customTemperature,
         timestamp,
         syncId: CLOUD_SYNC_ID
       };
@@ -307,6 +327,13 @@ const App: React.FC = () => {
           if (remote.ibsSupervision) setIbsSupervision(remote.ibsSupervision);
           if (remote.icuSignatures) setIcuSignatures(remote.icuSignatures);
           if (remote.ibsSignatures) setIbsSignatures(remote.ibsSignatures);
+          if (remote.icuTemperature) setIcuTemperature(remote.icuTemperature);
+          if (remote.ibsTemperature) setIbsTemperature(remote.ibsTemperature);
+          if (remote.customUnits) setCustomUnits(remote.customUnits);
+          if (remote.customData) setCustomData(remote.customData);
+          if (remote.customSupervision) setCustomSupervision(remote.customSupervision);
+          if (remote.customSignatures) setCustomSignatures(remote.customSignatures);
+          if (remote.customTemperature) setCustomTemperature(remote.customTemperature);
           
           lastCloudUpdate.current = remote.timestamp || Date.now();
           localStorage.setItem(STORAGE_KEY_TIMESTAMP, lastCloudUpdate.current.toString());
@@ -362,6 +389,18 @@ const App: React.FC = () => {
   useEffect(() => {
     if (isLoggedIn) localStorage.setItem(STORAGE_KEY_CUSTOM_SIG, JSON.stringify(customSignatures));
   }, [customSignatures, isLoggedIn]);
+
+  useEffect(() => {
+    if (isLoggedIn) localStorage.setItem(STORAGE_KEY_TEMP_ICU, JSON.stringify(icuTemperature));
+  }, [icuTemperature, isLoggedIn]);
+
+  useEffect(() => {
+    if (isLoggedIn) localStorage.setItem(STORAGE_KEY_TEMP_IBS, JSON.stringify(ibsTemperature));
+  }, [ibsTemperature, isLoggedIn]);
+
+  useEffect(() => {
+    if (isLoggedIn) localStorage.setItem(STORAGE_KEY_CUSTOM_TEMP, JSON.stringify(customTemperature));
+  }, [customTemperature, isLoggedIn]);
 
   const handleUpdateItem = useCallback((id: string, field: keyof InventoryItem, value: any) => {
     const updateFn = (prev: InventoryItem[]) => prev.map(item => item.idItem === id ? { ...item, [field]: value } : item);
@@ -484,6 +523,23 @@ const App: React.FC = () => {
     isInternalChange.current = false;
   }, [activeTab]);
 
+  const handleUpdateTemperature = useCallback((date: string, type: 'room' | 'cold', timeSlot: 'pagi' | 'siang' | 'malam' | 'humidity', value: number | string) => {
+    const updateFn = (prev: TemperatureEntry[]) => {
+      const next = [...prev];
+      const entryIdx = next.findIndex(e => e.date === date && e.type === type);
+      if (entryIdx >= 0) {
+        next[entryIdx] = { ...next[entryIdx], [timeSlot]: value };
+      } else {
+        next.push({ date, type, pagi: '', siang: '', malam: '', humidity: '', [timeSlot]: value });
+      }
+      return next;
+    };
+    if (activeTab === 'ICU') setIcuTemperature(updateFn);
+    else if (activeTab === 'IBS') setIbsTemperature(updateFn);
+    else setCustomTemperature(prev => ({ ...prev, [activeTab]: updateFn(prev[activeTab] || []) }));
+    isInternalChange.current = false;
+  }, [activeTab]);
+
   const handleStartAddUnit = useCallback(() => {
     setIsAddingUnit(true);
     setNewUnitName("");
@@ -505,6 +561,7 @@ const App: React.FC = () => {
     setCustomData(prev => ({ ...prev, [normalizedName]: [...ibsData] }));
     setCustomSupervision(prev => ({ ...prev, [normalizedName]: JSON.parse(JSON.stringify(ibsSupervision)) }));
     setCustomSignatures(prev => ({ ...prev, [normalizedName]: JSON.parse(JSON.stringify(INITIAL_SIGNATURES)) }));
+    setCustomTemperature(prev => ({ ...prev, [normalizedName]: [] }));
     setActiveTab(normalizedName);
     setRefreshId(prev => prev + 1);
     setIsAddingUnit(false);
@@ -525,6 +582,9 @@ const App: React.FC = () => {
       localStorage.removeItem(STORAGE_KEY_CUSTOM_DATA);
       localStorage.removeItem(STORAGE_KEY_CUSTOM_SUP);
       localStorage.removeItem(STORAGE_KEY_CUSTOM_SIG);
+      localStorage.removeItem(STORAGE_KEY_TEMP_ICU);
+      localStorage.removeItem(STORAGE_KEY_TEMP_IBS);
+      localStorage.removeItem(STORAGE_KEY_CUSTOM_TEMP);
       
       setIcuData([]);
       setIbsData([]);
@@ -532,10 +592,13 @@ const App: React.FC = () => {
       setIbsSupervision(JSON.parse(JSON.stringify(INITIAL_SUPERVISION_SECTIONS)));
       setIcuSignatures(JSON.parse(JSON.stringify(INITIAL_SIGNATURES)));
       setIbsSignatures(JSON.parse(JSON.stringify(INITIAL_SIGNATURES)));
+      setIcuTemperature([]);
+      setIbsTemperature([]);
       setCustomUnits([]);
       setCustomData({});
       setCustomSupervision({});
       setCustomSignatures({});
+      setCustomTemperature({});
       
       setIsLoading(true);
       await Promise.all([fetchData('ICU', true), fetchData('IBS', true)]);
@@ -569,6 +632,12 @@ const App: React.FC = () => {
     if (activeTab === 'IBS') return ibsSignatures;
     return customSignatures[activeTab] || INITIAL_SIGNATURES;
   }, [activeTab, icuSignatures, ibsSignatures, customSignatures]);
+
+  const currentTemperatureEntries = useMemo(() => {
+    if (activeTab === 'ICU') return icuTemperature;
+    if (activeTab === 'IBS') return ibsTemperature;
+    return customTemperature[activeTab] || [];
+  }, [activeTab, icuTemperature, ibsTemperature, customTemperature]);
 
   const getExpiryStatus = (item: InventoryItem) => {
     const { ed_dd, ed_mm, ed_yy } = item;
@@ -658,7 +727,7 @@ const App: React.FC = () => {
         doc.setFontSize(8); doc.setFont('helvetica', 'italic'); doc.text(`Signed at: ${sig.timestamp}`, 14, 93);
       } else { doc.text("___________________", 14, 85); }
       doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.text(sig.nama || '___________________', 14, 100); doc.setFont('helvetica', 'normal'); doc.text(`NIP: ${sig.nip || '___________________'}`, 14, 105);
-    } else {
+    } else if (view === 'supervision') {
       const rows: any[] = [];
       currentSupervisionSections.forEach(section => {
         rows.push([{ content: section.title, colSpan: 4, styles: { fillColor: [240, 240, 240], fontStyle: 'bold' } }]);
@@ -690,6 +759,36 @@ const App: React.FC = () => {
         doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.text(sig.nama || '___________________', xPos, 100);
         doc.setFont('helvetica', 'normal'); doc.text(`NIP: ${sig.nip || '___________________'}`, xPos, 105);
       }
+    } else if (view === 'temperature') {
+      const daysInMonth = new Date(selectedYear, selectedMonth + 1, 0).getDate();
+      const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+      
+      doc.setFontSize(12); doc.setFont('helvetica', 'bold');
+      doc.text('1. SUHU RUANGAN (15-25°C)', 14, 38);
+      
+      const roomRows = days.map(d => {
+        const dateStr = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        const e = currentTemperatureEntries.find(entry => entry.date === dateStr && entry.type === 'room');
+        return [d, e?.pagi || '-', e?.siang || '-', e?.malam || '-', e?.humidity ? `${e.humidity}%` : '-'];
+      });
+      autoTable(doc, {
+        startY: 42,
+        head: [['TGL', 'PAGI', 'SIANG', 'MALAM', 'HR (%)']],
+        body: roomRows, theme: 'grid', headStyles: { fillColor: [59, 130, 246] }, bodyStyles: { fontSize: 7 }
+      });
+      
+      const nextY = (doc as any).lastAutoTable.finalY + 10;
+      doc.text('2. SUHU COLD / KULKAS (2-8°C)', 14, nextY);
+      const coldRows = days.map(d => {
+        const dateStr = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        const e = currentTemperatureEntries.find(entry => entry.date === dateStr && entry.type === 'cold');
+        return [d, e?.pagi || '-', e?.siang || '-', e?.malam || '-', e?.humidity ? `${e.humidity}%` : '-'];
+      });
+      autoTable(doc, {
+        startY: nextY + 4,
+        head: [['TGL', 'PAGI', 'SIANG', 'MALAM', 'HR (%)']],
+        body: coldRows, theme: 'grid', headStyles: { fillColor: [16, 185, 129] }, bodyStyles: { fontSize: 7 }
+      });
     }
     doc.save(`${activeTab}_${view}_${now.toISOString().split('T')[0]}.pdf`);
     setIsLoading(false);
@@ -725,7 +824,11 @@ const App: React.FC = () => {
             <div>
               <p className="px-2 mb-3 text-[10px] font-black text-slate-500 uppercase tracking-widest">Main View</p>
               <div className="space-y-1">
-                {[{ id: 'inventory', label: 'Stock Opname', icon: 'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4' }, { id: 'supervision', label: 'Supervisi', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2' }].map((v) => (
+                {[
+                  { id: 'inventory', label: 'Stock Opname', icon: 'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4' }, 
+                  { id: 'supervision', label: 'Supervisi', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2' },
+                  { id: 'temperature', label: 'Monitoring Suhu', icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' }
+                ].map((v) => (
                   <button key={v.id} onClick={() => { setView(v.id as AppView); if (window.innerWidth < 1024) setIsSidebarOpen(false); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${view === v.id ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={v.icon}></path></svg>
                     {v.label}
@@ -853,28 +956,39 @@ const App: React.FC = () => {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm transition-colors duration-300">
                 <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase mb-1">Status Unit</p>
-                <p className="text-xl md:text-2xl font-black text-slate-900 dark:text-slate-100">{view === 'inventory' ? `TROLLEY ${activeTab}` : `SUPERVISI ${activeTab}`}</p>
+                <p className="text-xl md:text-2xl font-black text-slate-900 dark:text-slate-100">
+                  {view === 'inventory' ? `TROLLEY ${activeTab}` : (view === 'temperature' ? `SUHU ${activeTab}` : `SUPERVISI ${activeTab}`)}
+                </p>
               </div>
               <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm transition-colors duration-300">
                 <div className="flex justify-between items-start">
                   <div>
-                    <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase mb-1">Progress</p>
-                    <p className="text-xl md:text-2xl font-black text-emerald-600 dark:text-emerald-500">{view === 'inventory' ? stats.itemsCounted : stats.completedSup} <span className="text-sm font-medium text-slate-400 dark:text-slate-600 ml-1">/ {view === 'inventory' ? stats.total : 25}</span></p>
+                     <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase mb-1">Progress</p>
+                     <p className="text-xl md:text-2xl font-black text-emerald-600 dark:text-emerald-500">
+                       {view === 'inventory' ? stats.itemsCounted : (view === 'temperature' ? currentTemperatureEntries.length : stats.completedSup)} 
+                       <span className="text-sm font-medium text-slate-400 dark:text-slate-600 ml-1">
+                        / {view === 'inventory' ? stats.total : (view === 'temperature' ? 31 : 25)}
+                       </span>
+                     </p>
                   </div>
-                  <p className="text-sm font-black text-emerald-600 dark:text-emerald-500">{Math.round(view === 'inventory' ? stats.progressPercent : stats.supProgress)}%</p>
+                  <p className="text-sm font-black text-emerald-600 dark:text-emerald-500">
+                    {Math.round(view === 'inventory' ? stats.progressPercent : (view === 'temperature' ? (currentTemperatureEntries.length / 31) * 100 : stats.supProgress))}%
+                  </p>
                 </div>
-                <div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full mt-3 overflow-hidden"><div className="h-full bg-emerald-500 dark:bg-emerald-600 transition-all duration-500" style={{ width: `${view === 'inventory' ? stats.progressPercent : stats.supProgress}%` }}></div></div>
+                <div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full mt-3 overflow-hidden">
+                  <div className="h-full bg-emerald-500 dark:bg-emerald-600 transition-all duration-500" style={{ width: `${view === 'inventory' ? stats.progressPercent : (view === 'temperature' ? (currentTemperatureEntries.length / 31) * 100 : stats.supProgress)}%` }}></div>
+                </div>
               </div>
               <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm transition-colors duration-300">
                  <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase mb-1">{view === 'inventory' ? 'Selisih Fisik' : 'Peringatan'}</p>
                  <p className={`text-xl md:text-2xl font-black ${view === 'inventory' && stats.itemsWithDiff > 0 ? 'text-red-600 dark:text-red-500' : 'text-slate-900 dark:text-slate-100'}`}>{view === 'inventory' ? stats.itemsWithDiff : '-'}</p>
               </div>
             </div>
-            {view === 'supervision' && (
+            {(view === 'supervision' || view === 'temperature') && (
               <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row items-center gap-4 transition-colors duration-300">
                 <div className="flex items-center gap-2">
                   <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg"><svg className="w-5 h-5 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg></div>
-                  <span className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase tracking-tight">Periode Supervisi:</span>
+                  <span className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase tracking-tight">Periode {view === 'temperature' ? 'Monitoring' : 'Supervisi'}:</span>
                 </div>
                 <div className="flex gap-2 w-full md:w-auto">
                   <select value={selectedMonth} onChange={(e) => setSelectedMonth(parseInt(e.target.value))} className="flex-1 md:w-40 px-3 py-2 text-xs font-bold border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 rounded-xl focus:ring-4 focus:ring-blue-500/10 outline-none transition-colors">{MONTHS.map((m, i) => <option key={m} value={i}>{m}</option>)}</select>
@@ -895,7 +1009,7 @@ const App: React.FC = () => {
                     signatures={currentSignatures} 
                     onUpdateSignature={handleUpdateSignature} 
                   />
-                ) : (
+                ) : view === 'supervision' ? (
                   <SupervisionForm 
                     key={`${activeTab}-sup-${refreshId}`} 
                     sections={currentSupervisionSections} 
@@ -904,6 +1018,17 @@ const App: React.FC = () => {
                     onUpdateSignature={handleUpdateSignature} 
                     onAddCriteria={handleAddCriteria}
                     onRemoveCriteria={handleRemoveCriteria}
+                  />
+                ) : (
+                  <TemperatureMonitoring
+                    key={`${activeTab}-temp-${refreshId}`}
+                    entries={currentTemperatureEntries}
+                    onUpdate={handleUpdateTemperature}
+                    selectedMonth={selectedMonth}
+                    selectedYear={selectedYear}
+                    onMonthChange={setSelectedMonth}
+                    onYearChange={setSelectedYear}
+                    activeTab={activeTab}
                   />
                 )}
               </div>

@@ -37,7 +37,16 @@ export interface SupervisionSection {
 }
 
 export type Department = string;
-export type AppView = 'inventory' | 'supervision';
+export type AppView = 'inventory' | 'supervision' | 'temperature';
+
+export interface TemperatureEntry {
+  date: string; // ISO string YYYY-MM-DD
+  type: 'room' | 'cold';
+  pagi: number | string;   // 07-14
+  siang: number | string;  // 14-20
+  malam: number | string;  // 20-07
+  humidity?: number | string;
+}
 
 export interface DepartmentState {
   items: InventoryItem[];
