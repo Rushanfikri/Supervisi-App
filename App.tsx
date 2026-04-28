@@ -90,6 +90,7 @@ const App: React.FC = () => {
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
     return localStorage.getItem(STORAGE_KEY_AUTH) === 'true';
   });
+  const [isGuestMode, setIsGuestMode] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<Department>('ICU');
   const [view, setView] = useState<AppView>('inventory');
   const [refreshId, setRefreshId] = useState(0);
@@ -120,6 +121,32 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000); 
+    
+    // Check for guest view in URL (e.g. ?view=ICU)
+    const params = new URLSearchParams(window.location.search);
+    const guestView = params.get('view');
+    if (guestView) {
+      const dept = guestView.toUpperCase() as Department;
+      // We allow standard depts OR matching custom depts (case sensitive for custom)
+      if (['ICU', 'IBS'].includes(dept)) {
+        setActiveTab(dept);
+        setIsGuestMode(true);
+      } else {
+        const customUnitsStr = localStorage.getItem(STORAGE_KEY_CUSTOM_UNITS);
+        if (customUnitsStr) {
+          try {
+            const customUnits = JSON.parse(customUnitsStr) as string[];
+            if (customUnits.includes(guestView)) {
+              setActiveTab(guestView as Department);
+              setIsGuestMode(true);
+            }
+          } catch (e) {
+            console.error("Error parsing custom units", e);
+          }
+        }
+      }
+    }
+    
     return () => clearInterval(timer);
   }, []);
 
@@ -804,7 +831,7 @@ const App: React.FC = () => {
     return { total: currentInventoryItems.length, itemsWithDiff, itemsCounted, progressPercent, supProgress, completedSup };
   }, [currentInventoryItems, currentSupervisionSections]);
 
-  if (!isLoggedIn) {
+  if (!isLoggedIn && !isGuestMode) {
     return <Login onLogin={handleLogin} />;
   }
 
@@ -845,55 +872,86 @@ const App: React.FC = () => {
                     <svg className={`w-4 h-4 opacity-30 ${activeTab === tab ? 'opacity-100 text-blue-400' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path></svg>
                   </button>
                 ))}
-                {isAddingUnit ? (
-                  <div className="mt-2 p-2 bg-slate-800 rounded-xl border border-slate-700">
-                    <input
-                      type="text"
-                      value={newUnitName}
-                      onChange={(e) => setNewUnitName(e.target.value)}
-                      placeholder="Nama Unit..."
-                      className="w-full bg-slate-900 text-white text-xs px-2 py-1.5 rounded-lg border border-slate-700 focus:outline-none focus:border-blue-500 mb-2"
-                      autoFocus
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') handleSaveUnit();
-                        if (e.key === 'Escape') handleCancelAddUnit();
-                      }}
-                    />
-                    <div className="flex gap-2">
-                      <button
-                        onClick={handleSaveUnit}
-                        className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold py-1 rounded-lg transition-colors"
-                      >
-                        Simpan
-                      </button>
-                      <button
-                        onClick={handleCancelAddUnit}
-                        className="flex-1 bg-slate-700 hover:bg-slate-600 text-slate-300 text-[10px] font-bold py-1 rounded-lg transition-colors"
-                      >
-                        Batal
-                      </button>
+                {!isGuestMode && (
+                  isAddingUnit ? (
+                    <div className="mt-2 p-2 bg-slate-800 rounded-xl border border-slate-700">
+                      <input
+                        type="text"
+                        value={newUnitName}
+                        onChange={(e) => setNewUnitName(e.target.value)}
+                        placeholder="Nama Unit..."
+                        className="w-full bg-slate-900 text-white text-xs px-2 py-1.5 rounded-lg border border-slate-700 focus:outline-none focus:border-blue-500 mb-2"
+                        autoFocus
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleSaveUnit();
+                          if (e.key === 'Escape') handleCancelAddUnit();
+                        }}
+                      />
+                      <div className="flex gap-2">
+                        <button
+                          onClick={handleSaveUnit}
+                          className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold py-1 rounded-lg transition-colors"
+                        >
+                          Simpan
+                        </button>
+                        <button
+                          onClick={handleCancelAddUnit}
+                          className="flex-1 bg-slate-700 hover:bg-slate-600 text-slate-300 text-[10px] font-bold py-1 rounded-lg transition-colors"
+                        >
+                          Batal
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                ) : (
-                  <button
-                    onClick={handleStartAddUnit}
-                    className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs font-bold text-blue-400 hover:bg-blue-500/10 transition-all border border-dashed border-blue-500/30 mt-2"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"></path></svg>
-                    Tambah Unit
-                  </button>
+                  ) : (
+                    <button
+                      onClick={handleStartAddUnit}
+                      className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs font-bold text-blue-400 hover:bg-blue-500/10 transition-all border border-dashed border-blue-500/30 mt-2"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"></path></svg>
+                      Tambah Unit
+                    </button>
+                  )
                 )}
               </div>
             </div>
           </div>
           <div className="p-4 border-t border-slate-800">
-            <button 
-              onClick={handleLogout}
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-red-400 hover:bg-red-500/10 transition-all mb-4"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
-              Logout Session
-            </button>
+            {isLoggedIn && !isGuestMode && (
+              <button 
+                onClick={() => {
+                  const url = new URL(window.location.href);
+                  url.searchParams.set('view', activeTab);
+                  navigator.clipboard.writeText(url.toString());
+                  alert(`Link Guest Mode untuk Unit ${activeTab} disalin!`);
+                }}
+                className="w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest text-emerald-400 hover:bg-emerald-500/10 transition-all mb-2 border border-emerald-500/20"
+              >
+                <div className="flex items-center gap-2">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"></path></svg>
+                  <span>Salin Link View</span>
+                </div>
+                <span className="bg-emerald-500/10 px-2 py-0.5 rounded text-[8px]">{activeTab}</span>
+              </button>
+            )}
+            {isGuestMode ? (
+              <button 
+                onClick={() => {
+                  window.location.href = window.location.origin + window.location.pathname;
+                }}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-blue-400 hover:bg-blue-500/10 transition-all mb-4"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
+                Masuk Admin
+              </button>
+            ) : (
+              <button 
+                onClick={handleLogout}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-red-400 hover:bg-red-500/10 transition-all mb-4"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
+                Logout Session
+              </button>
+            )}
             <div className="p-3 bg-slate-800/50 rounded-xl flex items-center justify-center gap-2">
                <div className={`w-1.5 h-1.5 rounded-full ${isSyncing ? 'bg-blue-400 animate-pulse' : 'bg-emerald-400'}`}></div>
                <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest text-center">{isSyncing ? 'Syncing...' : 'v2.1 Stable'}</p>
@@ -916,24 +974,26 @@ const App: React.FC = () => {
             </div>
 
             <div className="flex items-center gap-2">
-              <button 
-                onClick={handleManualSync}
-                disabled={isSyncing || isLoading}
-                className={`flex items-center gap-2 px-3 py-2 rounded-xl transition-all font-bold text-[10px] md:text-xs shadow-lg ${
-                  isSyncing 
-                  ? 'bg-slate-400 cursor-not-allowed' 
-                  : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-100 dark:shadow-emerald-900/20'
-                }`}
-              >
-                {isSyncing ? (
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                ) : (
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7"></path>
-                  </svg>
-                )}
-                <span className="hidden md:inline">{isSyncing ? 'Menyimpan...' : 'Simpan ke Cloud'}</span>
-              </button>
+              {!isGuestMode && (
+                <button 
+                  onClick={handleManualSync}
+                  disabled={isSyncing || isLoading}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-xl transition-all font-bold text-[10px] md:text-xs shadow-lg ${
+                    isSyncing 
+                    ? 'bg-slate-400 cursor-not-allowed' 
+                    : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-100 dark:shadow-emerald-900/20'
+                  }`}
+                >
+                  {isSyncing ? (
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  ) : (
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7"></path>
+                    </svg>
+                  )}
+                  <span className="hidden md:inline">{isSyncing ? 'Menyimpan...' : 'Simpan ke Cloud'}</span>
+                </button>
+              )}
 
               <button onClick={toggleTheme} className="p-2.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all border border-slate-100 dark:border-slate-800">
                 {theme === 'light' ? (<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" /></svg>) : (<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 3v1m0 16v1m9-9h-1M4 9H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>)}
@@ -943,10 +1003,12 @@ const App: React.FC = () => {
                 {isLoading ? (<div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>) : (<svg className="w-4 h-4 hidden md:block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>)}
                 <span>Export PDF</span>
               </button>
-              <button onClick={handleReset} disabled={isLoading} className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-800 text-red-600 dark:text-red-400 rounded-xl border border-red-100 dark:border-red-900/30 hover:bg-red-50 dark:hover:bg-red-900/10 transition-all font-bold text-[10px] md:text-xs">
-                <svg className="w-4 h-4 hidden md:block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-                <span>Reset All</span>
-              </button>
+              {!isGuestMode && (
+                <button onClick={handleReset} disabled={isLoading} className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-800 text-red-600 dark:text-red-400 rounded-xl border border-red-100 dark:border-red-900/30 hover:bg-red-50 dark:hover:bg-red-900/10 transition-all font-bold text-[10px] md:text-xs">
+                  <svg className="w-4 h-4 hidden md:block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                  <span>Reset All</span>
+                </button>
+              )}
             </div>
           </div>
         </header>
@@ -1008,6 +1070,7 @@ const App: React.FC = () => {
                     onRemoveItem={handleRemoveItem}
                     signatures={currentSignatures} 
                     onUpdateSignature={handleUpdateSignature} 
+                    readOnly={isGuestMode}
                   />
                 ) : view === 'supervision' ? (
                   <SupervisionForm 
@@ -1018,6 +1081,7 @@ const App: React.FC = () => {
                     onUpdateSignature={handleUpdateSignature} 
                     onAddCriteria={handleAddCriteria}
                     onRemoveCriteria={handleRemoveCriteria}
+                    readOnly={isGuestMode}
                   />
                 ) : (
                   <TemperatureMonitoring
@@ -1029,6 +1093,7 @@ const App: React.FC = () => {
                     onMonthChange={setSelectedMonth}
                     onYearChange={setSelectedYear}
                     activeTab={activeTab}
+                    readOnly={isGuestMode}
                   />
                 )}
               </div>

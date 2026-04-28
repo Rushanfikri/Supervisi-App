@@ -8,9 +8,10 @@ interface SupervisionFormProps {
   onUpdateSignature: (role: keyof SupervisionSignatures, field: 'nama' | 'nip', value: string) => void;
   onAddCriteria: (sectionIndex: number) => void;
   onRemoveCriteria: (sectionIndex: number, itemIndex: number) => void;
+  readOnly?: boolean;
 }
 
-const SupervisionForm: React.FC<SupervisionFormProps> = ({ sections, signatures, onUpdateItem, onUpdateSignature, onAddCriteria, onRemoveCriteria }) => {
+const SupervisionForm: React.FC<SupervisionFormProps> = ({ sections, signatures, onUpdateItem, onUpdateSignature, onAddCriteria, onRemoveCriteria, readOnly = false }) => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editUraian, setEditUraian] = useState('');
   const [deleteConfirm, setDeleteConfirm] = useState<{sectionIndex: number, itemIndex: number, name: string} | null>(null);
@@ -52,7 +53,8 @@ const SupervisionForm: React.FC<SupervisionFormProps> = ({ sections, signatures,
           <label className="text-[9px] font-bold text-slate-400 dark:text-slate-600 uppercase">Nama Lengkap</label>
           <input
             type="text"
-            className="w-full px-3 py-2 text-xs font-bold border border-slate-100 dark:border-slate-800 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-700 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all"
+            disabled={readOnly}
+            className="w-full px-3 py-2 text-xs font-bold border border-slate-100 dark:border-slate-800 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-700 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all disabled:opacity-50"
             placeholder="Ketik Nama Lengkap..."
             value={sig.nama}
             onChange={(e) => onUpdateSignature(role, 'nama', e.target.value)}
@@ -63,7 +65,8 @@ const SupervisionForm: React.FC<SupervisionFormProps> = ({ sections, signatures,
           <label className="text-[9px] font-bold text-slate-400 dark:text-slate-600 uppercase">Nomor NIP</label>
           <input
             type="text"
-            className="w-full px-3 py-2 text-xs font-bold border border-slate-100 dark:border-slate-800 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-700 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all"
+            disabled={readOnly}
+            className="w-full px-3 py-2 text-xs font-bold border border-slate-100 dark:border-slate-800 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-700 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all disabled:opacity-50"
             placeholder="Nomor NIP Pegawai..."
             value={sig.nip}
             onChange={(e) => onUpdateSignature(role, 'nip', e.target.value)}
@@ -106,23 +109,25 @@ const SupervisionForm: React.FC<SupervisionFormProps> = ({ sections, signatures,
                 <th className="px-2 py-4 text-center text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest border-b border-slate-200 dark:border-slate-700 w-20">TIDAK SESUAI</th>
                 <th className="px-4 py-4 text-left text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest border-b border-slate-200 dark:border-slate-700 min-w-[200px]">TEMUAN</th>
                 <th className="px-4 py-4 text-left text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest border-b border-slate-200 dark:border-slate-700 min-w-[200px]">TINDAK LANJUT</th>
-                <th className="px-4 py-4 text-center text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest border-b border-slate-200 dark:border-slate-700 w-20">AKSI</th>
+                {!readOnly && <th className="px-4 py-4 text-center text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest border-b border-slate-200 dark:border-slate-700 w-20">AKSI</th>}
               </tr>
             </thead>
             <tbody className="bg-white dark:bg-slate-900 transition-colors">
               {sections.map((section, sIdx) => (
                 <React.Fragment key={sIdx}>
                   <tr className="bg-slate-100/50 dark:bg-slate-800/40">
-                    <td colSpan={6} className="px-4 py-2 border-y border-slate-200 dark:border-slate-700">
+                    <td colSpan={readOnly ? 5 : 6} className="px-4 py-2 border-y border-slate-200 dark:border-slate-700">
                       <div className="flex items-center justify-between">
                         <span className="text-[11px] font-black text-slate-900 dark:text-slate-100 uppercase tracking-wider">{section.title}</span>
-                        <button
-                          onClick={() => onAddCriteria(sIdx)}
-                          className="flex items-center gap-1 px-2 py-1 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors text-[10px] font-bold uppercase tracking-tight"
-                        >
-                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4"></path></svg>
-                          Tambah Kriteria
-                        </button>
+                        {!readOnly && (
+                          <button
+                            onClick={() => onAddCriteria(sIdx)}
+                            className="flex items-center gap-1 px-2 py-1 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors text-[10px] font-bold uppercase tracking-tight"
+                          >
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4"></path></svg>
+                            Tambah Kriteria
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -144,24 +149,26 @@ const SupervisionForm: React.FC<SupervisionFormProps> = ({ sections, signatures,
                         </td>
                         <td className="px-2 py-3 text-center border-b border-slate-100 dark:border-slate-800">
                           <button
-                            onClick={() => onUpdateItem(sIdx, iIdx, 'sesuai', true)}
+                            onClick={() => !readOnly && onUpdateItem(sIdx, iIdx, 'sesuai', true)}
+                            disabled={readOnly}
                             className={`w-6 h-6 rounded-md border-2 transition-all flex items-center justify-center ${
                               item.sesuai === true 
                                 ? 'bg-emerald-500 border-emerald-500 text-white' 
                                 : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-emerald-300 dark:hover:border-emerald-700'
-                            }`}
+                            } disabled:cursor-not-allowed`}
                           >
                             {item.sesuai === true && <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" /></svg>}
                           </button>
                         </td>
                         <td className="px-2 py-3 text-center border-b border-slate-100 dark:border-slate-800">
                           <button
-                            onClick={() => onUpdateItem(sIdx, iIdx, 'sesuai', false)}
+                            onClick={() => !readOnly && onUpdateItem(sIdx, iIdx, 'sesuai', false)}
+                            disabled={readOnly}
                             className={`w-6 h-6 rounded-md border-2 transition-all flex items-center justify-center ${
                               item.sesuai === false 
                                 ? 'bg-red-500 border-red-500 text-white' 
                                 : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-red-300 dark:hover:border-red-700'
-                            }`}
+                            } disabled:cursor-not-allowed`}
                           >
                             {item.sesuai === false && <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M6 18L18 6M6 6l12 12" /></svg>}
                           </button>
@@ -169,7 +176,8 @@ const SupervisionForm: React.FC<SupervisionFormProps> = ({ sections, signatures,
                         <td className="px-4 py-3 border-b border-slate-100 dark:border-slate-800">
                           <input
                             type="text"
-                            className="w-full px-3 py-1.5 text-xs bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 border border-slate-100 dark:border-slate-700 rounded-lg focus:bg-white dark:focus:bg-slate-700 focus:border-blue-400 focus:ring-4 focus:ring-blue-400/5 outline-none transition-all"
+                            disabled={readOnly}
+                            className="w-full px-3 py-1.5 text-xs bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 border border-slate-100 dark:border-slate-700 rounded-lg focus:bg-white dark:focus:bg-slate-700 focus:border-blue-400 focus:ring-4 focus:ring-blue-400/5 outline-none transition-all disabled:opacity-50"
                             placeholder="Catat temuan..."
                             value={item.temuan}
                             onChange={(e) => onUpdateItem(sIdx, iIdx, 'temuan', e.target.value)}
@@ -178,61 +186,64 @@ const SupervisionForm: React.FC<SupervisionFormProps> = ({ sections, signatures,
                         <td className="px-4 py-3 border-b border-slate-100 dark:border-slate-800">
                           <input
                             type="text"
-                            className="w-full px-3 py-1.5 text-xs bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 border border-slate-100 dark:border-slate-700 rounded-lg focus:bg-white dark:focus:bg-slate-700 focus:border-blue-400 focus:ring-4 focus:ring-blue-400/5 outline-none transition-all"
+                            disabled={readOnly}
+                            className="w-full px-3 py-1.5 text-xs bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 border border-slate-100 dark:border-slate-700 rounded-lg focus:bg-white dark:focus:bg-slate-700 focus:border-blue-400 focus:ring-4 focus:ring-blue-400/5 outline-none transition-all disabled:opacity-50"
                             placeholder="Rencana tindak lanjut..."
                             value={item.tindakLanjut}
                             onChange={(e) => onUpdateItem(sIdx, iIdx, 'tindakLanjut', e.target.value)}
                           />
                         </td>
-                        <td className="px-4 py-3 border-b border-slate-100 dark:border-slate-800 text-center">
-                          {isEditing ? (
-                            <div className="flex items-center justify-center gap-1">
-                              <button
-                                onClick={() => saveEditing(sIdx, iIdx)}
-                                className="p-1.5 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-lg hover:bg-emerald-200 dark:hover:bg-emerald-900/50 transition-colors"
-                                title="Simpan"
-                              >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7"></path>
-                                </svg>
-                              </button>
-                              <button
-                                onClick={cancelEditing}
-                                className="p-1.5 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-lg hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"
-                                title="Batal"
-                              >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path>
-                                </svg>
-                              </button>
-                            </div>
-                          ) : (
-                            <div className="flex items-center justify-center gap-1">
-                              <button
-                                onClick={() => startEditing(item)}
-                                className="p-1.5 bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/30 hover:text-blue-600 dark:hover:text-blue-400 transition-all"
-                                title="Edit Item"
-                              >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
-                                </svg>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setDeleteConfirm({ sectionIndex: sIdx, itemIndex: iIdx, name: item.uraian });
-                                }}
-                                className="p-1.5 bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-600 dark:hover:text-red-400 transition-all"
-                                title="Hapus Item"
-                              >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
-                                </svg>
-                              </button>
-                            </div>
-                          )}
-                        </td>
+                        {!readOnly && (
+                          <td className="px-4 py-3 border-b border-slate-100 dark:border-slate-800 text-center">
+                            {isEditing ? (
+                              <div className="flex items-center justify-center gap-1">
+                                <button
+                                  onClick={() => saveEditing(sIdx, iIdx)}
+                                  className="p-1.5 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-lg hover:bg-emerald-200 dark:hover:bg-emerald-900/50 transition-colors"
+                                  title="Simpan"
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7"></path>
+                                  </svg>
+                                </button>
+                                <button
+                                  onClick={cancelEditing}
+                                  className="p-1.5 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-lg hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"
+                                  title="Batal"
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path>
+                                  </svg>
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="flex items-center justify-center gap-1">
+                                <button
+                                  onClick={() => startEditing(item)}
+                                  className="p-1.5 bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/30 hover:text-blue-600 dark:hover:text-blue-400 transition-all"
+                                  title="Edit Item"
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+                                  </svg>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setDeleteConfirm({ sectionIndex: sIdx, itemIndex: iIdx, name: item.uraian });
+                                  }}
+                                  className="p-1.5 bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-600 dark:hover:text-red-400 transition-all"
+                                  title="Hapus Item"
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                                  </svg>
+                                </button>
+                              </div>
+                            )}
+                          </td>
+                        )}
                       </tr>
                     );
                   })}

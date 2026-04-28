@@ -24,6 +24,7 @@ interface TemperatureMonitoringProps {
   onMonthChange: (month: number) => void;
   onYearChange: (year: number) => void;
   activeTab: string;
+  readOnly?: boolean;
 }
 
 const TemperatureMonitoring: React.FC<TemperatureMonitoringProps> = ({
@@ -33,7 +34,8 @@ const TemperatureMonitoring: React.FC<TemperatureMonitoringProps> = ({
   selectedYear,
   onMonthChange,
   onYearChange,
-  activeTab
+  activeTab,
+  readOnly = false
 }) => {
   const [formDate, setFormDate] = useState(() => {
     const d = new Date();
@@ -141,65 +143,69 @@ const TemperatureMonitoring: React.FC<TemperatureMonitoringProps> = ({
       className="space-y-8 pb-32"
     >
       {/* Static Input Form */}
-      <div className="bg-white dark:bg-slate-900 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-800 shadow-2xl relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 rounded-full -mr-16 -mt-16 blur-3xl"></div>
-        <div className="relative z-10">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-10 h-10 bg-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/20">
-              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"></path></svg>
-            </div>
-            <div>
-              <h2 className="text-xl font-black text-slate-800 dark:text-white uppercase tracking-tight">Input Suhu & Kelembapan</h2>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Entry Data Terpusat Unit {activeTab}</p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 items-end">
-             <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 pl-1">Jenis Lokasi</label>
-              <div className="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-xl">
-                <button onClick={() => setTempType('room')} className={`flex-1 py-2 text-[10px] font-black uppercase rounded-lg transition-all ${tempType === 'room' ? 'bg-white dark:bg-slate-700 text-blue-600 shadow-sm' : 'text-slate-500'}`}>Ruang</button>
-                <button onClick={() => setTempType('cold')} className={`flex-1 py-2 text-[10px] font-black uppercase rounded-lg transition-all ${tempType === 'cold' ? 'bg-white dark:bg-slate-700 text-emerald-600 shadow-sm' : 'text-slate-500'}`}>Cold</button>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 pl-1">Waktu / Shift</label>
-              <div className="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-xl">
-                {['pagi', 'siang', 'malam'].map(s => (
-                  <button key={s} onClick={() => setSelectedShift(s as any)} className={`flex-1 py-2 text-[10px] font-black uppercase rounded-lg transition-all ${selectedShift === s ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500'}`}>{s}</button>
-                ))}
-              </div>
-            </div>
-
-            <div className="md:col-span-2 grid grid-cols-2 lg:grid-cols-4 gap-4 items-end">
-              <div className="lg:col-span-1">
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 pl-1">Tanggal</label>
-                <input type="date" value={formDate} onChange={(e) => setFormDate(e.target.value)} className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border-0 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500/20" />
+      {!readOnly && (
+        <div className="bg-white dark:bg-slate-900 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-800 shadow-2xl relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 rounded-full -mr-16 -mt-16 blur-3xl"></div>
+          <div className="relative z-10">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-10 h-10 bg-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/20">
+                <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"></path></svg>
               </div>
               <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 pl-1">Suhu (°C)</label>
-                <input type="number" step="0.1" value={tempValue} onChange={(e) => setTempValue(e.target.value)} placeholder="00.0" className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border-0 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500/20" />
+                <h2 className="text-xl font-black text-slate-800 dark:text-white uppercase tracking-tight">Input Suhu & Kelembapan</h2>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Entry Data Terpusat Unit {activeTab}</p>
               </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 items-end">
+               <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 pl-1">Jenis Lokasi</label>
+                <div className="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-xl">
+                  <button onClick={() => setTempType('room')} className={`flex-1 py-2 text-[10px] font-black uppercase rounded-lg transition-all ${tempType === 'room' ? 'bg-white dark:bg-slate-700 text-blue-600 shadow-sm' : 'text-slate-500'}`}>Ruang</button>
+                  <button onClick={() => setTempType('cold')} className={`flex-1 py-2 text-[10px] font-black uppercase rounded-lg transition-all ${tempType === 'cold' ? 'bg-white dark:bg-slate-700 text-emerald-600 shadow-sm' : 'text-slate-500'}`}>Cold</button>
+                </div>
+              </div>
+
               <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 pl-1">HR (%)</label>
-                <input type="number" value={humidityValue} onChange={(e) => setHumidityValue(e.target.value)} placeholder="%" className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border-0 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500/20" />
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 pl-1">Waktu / Shift</label>
+                <div className="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-xl">
+                  {['pagi', 'siang', 'malam'].map(s => (
+                    <button key={s} onClick={() => setSelectedShift(s as any)} className={`flex-1 py-2 text-[10px] font-black uppercase rounded-lg transition-all ${selectedShift === s ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500'}`}>{s}</button>
+                  ))}
+                </div>
               </div>
-              <button onClick={handleSave} className="h-[42px] bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-lg shadow-blue-500/20">Simpan</button>
+
+              <div className="md:col-span-2 grid grid-cols-2 lg:grid-cols-4 gap-4 items-end">
+                <div className="lg:col-span-1">
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 pl-1">Tanggal</label>
+                  <input type="date" value={formDate} onChange={(e) => setFormDate(e.target.value)} className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border-0 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500/20" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 pl-1">Suhu (°C)</label>
+                  <input type="number" step="0.1" value={tempValue} onChange={(e) => setTempValue(e.target.value)} placeholder="00.0" className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border-0 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500/20" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 pl-1">HR (%)</label>
+                  <input type="number" value={humidityValue} onChange={(e) => setHumidityValue(e.target.value)} placeholder="%" className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border-0 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500/20" />
+                </div>
+                <button onClick={handleSave} className="h-[42px] bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-lg shadow-blue-500/20">Simpan</button>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      )}
 
       <div className="flex flex-col md:flex-row justify-between items-center gap-4">
         <div className="flex gap-2">
             <select value={selectedMonth} onChange={(e) => onMonthChange(parseInt(e.target.value))} className="px-4 py-2 text-xs font-bold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/10 transition-all">{MONTHS.map((m, i) => <option key={m} value={i}>{m}</option>)}</select>
             <select value={selectedYear} onChange={(e) => onYearChange(parseInt(e.target.value))} className="px-4 py-2 text-xs font-bold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/10 transition-all">{years.map(y => <option key={y} value={y}>{y}</option>)}</select>
         </div>
-        <button onClick={handleExportPDF} className="flex items-center gap-2 px-6 py-2 bg-slate-800 dark:bg-slate-700 text-white text-xs font-bold rounded-xl hover:opacity-90 transition-all">
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-          Sertifikat Monitoring PDF
-        </button>
+        {!readOnly && (
+          <button onClick={handleExportPDF} className="flex items-center gap-2 px-6 py-2 bg-slate-800 dark:bg-slate-700 text-white text-xs font-bold rounded-xl hover:opacity-90 transition-all">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+            Sertifikat Monitoring PDF
+          </button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-8">
