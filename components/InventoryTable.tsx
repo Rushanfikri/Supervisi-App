@@ -2,6 +2,8 @@
 import React, { useState } from 'react';
 import { InventoryItem, SupervisionSignatures } from '../types';
 
+const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Ags', 'Sep', 'Okt', 'Nov', 'Des'];
+
 interface InventoryTableProps {
   items: InventoryItem[];
   currentDate: Date;
@@ -292,21 +294,37 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
                       )}
                     </td>
                     <td className="px-4 py-4 text-center">
-                      <input
-                        type="number"
-                        inputMode="numeric"
-                        disabled={readOnly}
-                        className={`w-16 md:w-20 px-2 py-2 text-sm border-2 rounded-xl focus:ring-4 focus:ring-blue-500/10 outline-none text-center font-black transition-all ${
-                          isShortage ? 'border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400' :
-                          isSurplus ? 'border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400' :
-                          isChecked 
-                            ? 'border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400' 
-                            : 'border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-200 hover:border-slate-300 dark:hover:border-slate-600'
-                        } disabled:opacity-50 disabled:cursor-not-allowed`}
-                        placeholder="0"
-                        value={item.fisik}
-                        onChange={(e) => handlePhysicalChange(item.idItem, e.target.value, item.sistem)}
-                      />
+                      {readOnly ? (
+                        <div className="flex flex-col items-center justify-center">
+                          <span className={`inline-flex items-center justify-center px-4 py-1.5 rounded-full text-xs font-black min-w-[3.5rem] text-center border-2 ${
+                            isShortage 
+                              ? 'bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-400 border-red-200 dark:border-red-900/40' 
+                              : isSurplus
+                                ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-900/40'
+                                : isChecked
+                                  ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900/40'
+                                  : 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border-slate-200 dark:border-slate-700'
+                          }`}>
+                            {item.fisik !== "" ? item.fisik : "—"}
+                          </span>
+                        </div>
+                      ) : (
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          disabled={readOnly}
+                          className={`w-16 md:w-20 px-2 py-2 text-sm border-2 rounded-xl focus:ring-4 focus:ring-blue-500/10 outline-none text-center font-black transition-all ${
+                            isShortage ? 'border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400' :
+                            isSurplus ? 'border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400' :
+                            isChecked 
+                              ? 'border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400' 
+                              : 'border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-200 hover:border-slate-300 dark:hover:border-slate-600'
+                          } disabled:opacity-50 disabled:cursor-not-allowed`}
+                          placeholder="0"
+                          value={item.fisik}
+                          onChange={(e) => handlePhysicalChange(item.idItem, e.target.value, item.sistem)}
+                        />
+                      )}
                     </td>
                     <td className="px-4 py-4 text-center">
                       <div className={`inline-flex items-center justify-center min-w-[3rem] px-2 py-1 rounded-lg text-sm font-black transition-all ${
@@ -322,57 +340,87 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
                       </div>
                     </td>
                     <td className="px-4 py-4">
-                      <div className="flex flex-col items-center gap-1">
-                        <div className={`flex items-center justify-center gap-0.5 md:gap-1 p-1 rounded-lg transition-all ${
-                          expStatus !== 'normal' ? 'bg-red-50 dark:bg-red-900/20 ring-2 ring-red-500 ring-offset-1 dark:ring-offset-slate-900' : ''
-                        }`}>
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            placeholder="DD"
-                            maxLength={2}
-                            disabled={readOnly}
-                            className={`w-9 md:w-11 px-1 py-2 text-[10px] md:text-xs border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 rounded-lg text-center outline-none focus:border-blue-500 focus:bg-blue-50 dark:focus:bg-slate-700 font-bold text-slate-800 dark:text-slate-200 ${
-                              expStatus !== 'normal' ? 'text-red-600 dark:text-red-400 border-red-200 dark:border-red-900' : ''
-                            } disabled:opacity-50`}
-                            value={item.ed_dd}
-                            onChange={(e) => handleDateInput(e, item.idItem, 'ed_dd', 2)}
-                          />
-                          <span className={expStatus !== 'normal' ? 'text-red-300 dark:text-red-900' : 'text-slate-300 dark:text-slate-700'}>/</span>
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            placeholder="MM"
-                            maxLength={2}
-                            disabled={readOnly}
-                            className={`w-9 md:w-11 px-1 py-2 text-[10px] md:text-xs border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 rounded-lg text-center outline-none focus:border-blue-500 focus:bg-blue-50 dark:focus:bg-slate-700 font-bold text-slate-800 dark:text-slate-200 ${
-                              expStatus !== 'normal' ? 'text-red-600 dark:text-red-400 border-red-200 dark:border-red-900' : ''
-                            } disabled:opacity-50`}
-                            value={item.ed_mm}
-                            onChange={(e) => handleDateInput(e, item.idItem, 'ed_mm', 2)}
-                          />
-                          <span className={expStatus !== 'normal' ? 'text-red-300 dark:text-red-900' : 'text-slate-300 dark:text-slate-700'}>/</span>
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            placeholder="YYYY"
-                            maxLength={4}
-                            disabled={readOnly}
-                            className={`w-14 md:w-16 px-1 py-2 text-[10px] md:text-xs border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 rounded-lg text-center outline-none focus:border-blue-500 focus:bg-blue-50 dark:focus:bg-slate-700 font-bold text-slate-800 dark:text-slate-200 ${
-                              expStatus !== 'normal' ? 'text-red-600 dark:text-red-400 border-red-200 dark:border-red-900' : ''
-                            } disabled:opacity-50`}
-                            value={item.ed_yy}
-                            onChange={(e) => handleDateInput(e, item.idItem, 'ed_yy', 4)}
-                          />
+                      {readOnly ? (
+                        <div className="flex flex-col items-center gap-1.5 justify-center">
+                          {item.ed_dd && item.ed_mm && item.ed_yy ? (
+                            <span className={`px-3 py-1.5 rounded-xl text-xs font-black shadow-sm flex items-center gap-1 border whitespace-nowrap ${
+                              expStatus === 'expired' 
+                                ? 'bg-red-550/10 text-red-700 border-red-200 dark:bg-red-950/60 dark:text-red-400 dark:border-red-900' 
+                                : expStatus === 'warning'
+                                  ? 'bg-amber-100/30 text-amber-700 border-amber-200 dark:bg-amber-950/60 dark:text-amber-400 dark:border-amber-900'
+                                  : 'bg-slate-50 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
+                            }`}>
+                              <svg className="w-3.5 h-3.5 opacity-60 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                              </svg>
+                              <span>{item.ed_dd} {MONTHS_SHORT[parseInt(item.ed_mm) - 1] || item.ed_mm} {item.ed_yy}</span>
+                            </span>
+                          ) : (
+                            <span className="text-xs text-slate-300 dark:text-slate-700 font-bold italic">— Belum diisi —</span>
+                          )}
+                          {expStatus !== 'normal' && (
+                            <span className={`text-[9.5px] font-black tracking-wider px-2.5 py-0.5 rounded-full shadow-sm animate-pulse ${
+                              expStatus === 'expired' 
+                                ? 'bg-red-500 text-white dark:bg-red-650' 
+                                : 'bg-amber-500 text-white dark:bg-amber-650'
+                            }`}>
+                              {expStatus === 'expired' ? '⚠️ EXPIRED' : '⚠️ < 3 BULAN'}
+                            </span>
+                          )}
                         </div>
-                        {expStatus !== 'normal' && (
-                          <div className="flex items-center gap-1">
-                             <span className={`text-[9px] font-black uppercase tracking-tighter ${expStatus === 'expired' ? 'text-red-700 dark:text-red-400' : 'text-red-500 dark:text-red-400'}`}>
-                               {expStatus === 'expired' ? '⚠️ EXPIRED' : '⚠️ < 3 BULAN'}
-                             </span>
+                      ) : (
+                        <div className="flex flex-col items-center gap-1">
+                          <div className={`flex items-center justify-center gap-0.5 md:gap-1 p-1 rounded-lg transition-all ${
+                            expStatus !== 'normal' ? 'bg-red-50 dark:bg-red-900/20 ring-2 ring-red-500 ring-offset-1 dark:ring-offset-slate-900' : ''
+                          }`}>
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              placeholder="DD"
+                              maxLength={2}
+                              disabled={readOnly}
+                              className={`w-9 md:w-11 px-1 py-2 text-[10px] md:text-xs border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 rounded-lg text-center outline-none focus:border-blue-500 focus:bg-blue-50 dark:focus:bg-slate-700 font-bold text-slate-800 dark:text-slate-200 ${
+                                expStatus !== 'normal' ? 'text-red-600 dark:text-red-400 border-red-200 dark:border-red-900' : ''
+                              } disabled:opacity-50`}
+                              value={item.ed_dd}
+                              onChange={(e) => handleDateInput(e, item.idItem, 'ed_dd', 2)}
+                            />
+                            <span className={expStatus !== 'normal' ? 'text-red-300 dark:text-red-900' : 'text-slate-300 dark:text-slate-700'}>/</span>
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              placeholder="MM"
+                              maxLength={2}
+                              disabled={readOnly}
+                              className={`w-9 md:w-11 px-1 py-2 text-[10px] md:text-xs border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 rounded-lg text-center outline-none focus:border-blue-500 focus:bg-blue-50 dark:focus:bg-slate-700 font-bold text-slate-800 dark:text-slate-200 ${
+                                expStatus !== 'normal' ? 'text-red-600 dark:text-red-400 border-red-200 dark:border-red-900' : ''
+                              } disabled:opacity-50`}
+                              value={item.ed_mm}
+                              onChange={(e) => handleDateInput(e, item.idItem, 'ed_mm', 2)}
+                            />
+                            <span className={expStatus !== 'normal' ? 'text-red-300 dark:text-red-900' : 'text-slate-300 dark:text-slate-700'}>/</span>
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              placeholder="YYYY"
+                              maxLength={4}
+                              disabled={readOnly}
+                              className={`w-14 md:w-16 px-1 py-2 text-[10px] md:text-xs border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 rounded-lg text-center outline-none focus:border-blue-500 focus:bg-blue-50 dark:focus:bg-slate-700 font-bold text-slate-800 dark:text-slate-200 ${
+                                expStatus !== 'normal' ? 'text-red-600 dark:text-red-400 border-red-200 dark:border-red-900' : ''
+                              } disabled:opacity-50`}
+                              value={item.ed_yy}
+                              onChange={(e) => handleDateInput(e, item.idItem, 'ed_yy', 4)}
+                            />
                           </div>
-                        )}
-                      </div>
+                          {expStatus !== 'normal' && (
+                            <div className="flex items-center gap-1">
+                               <span className={`text-[9px] font-black uppercase tracking-tighter ${expStatus === 'expired' ? 'text-red-700 dark:text-red-400' : 'text-red-500 dark:text-red-400'}`}>
+                                 {expStatus === 'expired' ? '⚠️ EXPIRED' : '⚠️ < 3 BULAN'}
+                               </span>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </td>
                     {!readOnly && (
                       <td className="px-4 py-4 text-center">

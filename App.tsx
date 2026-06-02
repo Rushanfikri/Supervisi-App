@@ -92,6 +92,7 @@ const App: React.FC = () => {
   });
   const [isGuestMode, setIsGuestMode] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<Department>('ICU');
+  const [guestSearchTerm, setGuestSearchTerm] = useState("");
   const [view, setView] = useState<AppView>('inventory');
   const [refreshId, setRefreshId] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
@@ -118,37 +119,6 @@ const App: React.FC = () => {
   // Period state for Supervision
   const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
-
-  useEffect(() => {
-    const timer = setInterval(() => setNow(new Date()), 1000); 
-    
-    // Check for guest view in URL (e.g. ?view=ICU)
-    const params = new URLSearchParams(window.location.search);
-    const guestView = params.get('view');
-    if (guestView) {
-      const dept = guestView.toUpperCase() as Department;
-      // We allow standard depts OR matching custom depts (case sensitive for custom)
-      if (['ICU', 'IBS'].includes(dept)) {
-        setActiveTab(dept);
-        setIsGuestMode(true);
-      } else {
-        const customUnitsStr = localStorage.getItem(STORAGE_KEY_CUSTOM_UNITS);
-        if (customUnitsStr) {
-          try {
-            const customUnits = JSON.parse(customUnitsStr) as string[];
-            if (customUnits.includes(guestView)) {
-              setActiveTab(guestView as Department);
-              setIsGuestMode(true);
-            }
-          } catch (e) {
-            console.error("Error parsing custom units", e);
-          }
-        }
-      }
-    }
-    
-    return () => clearInterval(timer);
-  }, []);
 
   useEffect(() => {
     if (theme === 'dark') {
@@ -251,6 +221,82 @@ const App: React.FC = () => {
     return saved ? JSON.parse(saved) : {};
   });
 
+  const saveToFallbackCloud = useCallback(async (payload: any) => {
+    try {
+      await fetch(`https://kvdb.io/rs-inventory-pro-prod-v2-bucket/${CLOUD_SYNC_ID}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      console.log("Mencadangkan ke fallback cloud...");
+    } catch (err) {
+      console.warn("Gagal mencadangkan ke fallback cloud:", err);
+    }
+  }, []);
+
+  const fetchFromFallbackCloud = useCallback(async () => {
+    try {
+      const res = await fetch(`https://kvdb.io/rs-inventory-pro-prod-v2-bucket/${CLOUD_SYNC_ID}`);
+      if (res.ok) {
+        const remote = await res.json();
+        if (remote && remote.timestamp && remote.timestamp > lastCloudUpdate.current) {
+          console.log("Menerima data terbaru dari fallback cloud...");
+          isInternalChange.current = true;
+          
+          if (remote.icuData) setIcuData(remote.icuData);
+          if (remote.ibsData) setIbsData(remote.ibsData);
+          if (remote.icuSupervision) setIcuSupervision(remote.icuSupervision);
+          if (remote.ibsSupervision) setIbsSupervision(remote.ibsSupervision);
+          if (remote.icuSignatures) setIcuSignatures(remote.icuSignatures);
+          if (remote.ibsSignatures) setIbsSignatures(remote.ibsSignatures);
+          if (remote.icuTemperature) setIcuTemperature(remote.icuTemperature);
+          if (remote.ibsTemperature) setIbsTemperature(remote.ibsTemperature);
+          if (remote.customUnits) setCustomUnits(remote.customUnits);
+          if (remote.customData) setCustomData(remote.customData);
+          if (remote.customSupervision) setCustomSupervision(remote.customSupervision);
+          if (remote.customSignatures) setCustomSignatures(remote.customSignatures);
+          if (remote.customTemperature) setCustomTemperature(remote.customTemperature);
+          
+          lastCloudUpdate.current = remote.timestamp;
+          localStorage.setItem(STORAGE_KEY_TIMESTAMP, remote.timestamp.toString());
+        }
+      }
+    } catch (err) {
+      console.warn("Gagal memuat fallback cloud:", err);
+    }
+  }, [
+    setIcuData, setIbsData, setIcuSupervision, setIbsSupervision,
+    setIcuSignatures, setIbsSignatures, setIcuTemperature, setIbsTemperature,
+    setCustomUnits, setCustomData, setCustomSupervision, setCustomSignatures,
+    setCustomTemperature
+  ]);
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 1000); 
+    
+    // Check for guest view in URL (e.g. ?view=ICU or ?view=CustomUnit)
+    const params = new URLSearchParams(window.location.search);
+    const guestView = params.get('view');
+    if (guestView) {
+      setActiveTab(guestView as Department);
+      setIsGuestMode(true);
+      fetchFromFallbackCloud();
+    }
+    
+    return () => clearInterval(timer);
+  }, [fetchFromFallbackCloud]);
+
+  // Polling update otomatis backup untuk data link view only (Guest Mode) setiap 10 detik
+  useEffect(() => {
+    if (isGuestMode) {
+      const poll = setInterval(() => {
+        console.log("Memperbarui data link view-only dari cloud...");
+        fetchFromFallbackCloud();
+      }, 10000);
+      return () => clearInterval(poll);
+    }
+  }, [isGuestMode, fetchFromFallbackCloud]);
+
   const parseGvizResponse = (responseText: string): InventoryItem[] => {
     try {
       const jsonString = responseText.match(/setResponse\((.*)\);/)?.[1];
@@ -324,10 +370,28 @@ const App: React.FC = () => {
         syncId: CLOUD_SYNC_ID
       };
 
-      await setDoc(doc(db, "sync", CLOUD_SYNC_ID), payload, { merge: true });
-      lastCloudUpdate.current = timestamp;
-      localStorage.setItem(STORAGE_KEY_TIMESTAMP, timestamp.toString());
-      alert("✅ Data berhasil disimpan ke Cloud!"); 
+      let success = false;
+      try {
+        await setDoc(doc(db, "sync", CLOUD_SYNC_ID), payload, { merge: true });
+        success = true;
+      } catch (err) {
+        console.warn("Firestore save failed, trying fallback...", err);
+      }
+
+      try {
+        await saveToFallbackCloud(payload);
+        success = true; // If fallback succeeds, we count it as successful sync
+      } catch (err) {
+        console.error("Fallback save failed:", err);
+      }
+
+      if (success) {
+        lastCloudUpdate.current = timestamp;
+        localStorage.setItem(STORAGE_KEY_TIMESTAMP, timestamp.toString());
+        alert("✅ Data berhasil disimpan ke Cloud!"); 
+      } else {
+        throw new Error("Both primary and fallback cloud databases failed to write.");
+      }
     } catch (e) {
       console.error("Sync failed", e);
       alert("❌ Gagal menyimpan ke Cloud. Cek koneksi internet.");
@@ -338,7 +402,7 @@ const App: React.FC = () => {
 
   // Real-time Listener (Hanya download)
   useEffect(() => {
-    if (!isLoggedIn) return;
+    if (!isLoggedIn && !isGuestMode) return;
     const unsubscribe = onSnapshot(doc(db, "sync", CLOUD_SYNC_ID), (snapshot) => {
       if (snapshot.exists()) {
         const remote = snapshot.data();
@@ -365,69 +429,73 @@ const App: React.FC = () => {
           lastCloudUpdate.current = remote.timestamp || Date.now();
           localStorage.setItem(STORAGE_KEY_TIMESTAMP, lastCloudUpdate.current.toString());
         }
+      } else {
+        console.log("Dokumen Firestore kosong, memuat dari database fallback...");
+        fetchFromFallbackCloud();
       }
       isInitialSyncDone.current = true;
     }, (err) => {
-      console.error("Snapshot error:", err);
+      console.error("Snapshot error, memicu database fallback...", err);
+      fetchFromFallbackCloud();
       isInitialSyncDone.current = true;
     });
 
     return () => unsubscribe();
-  }, [isLoggedIn]);
+  }, [isLoggedIn, isGuestMode]);
 
   useEffect(() => {
-    if (!isLoggedIn) return;
+    if (!isLoggedIn && !isGuestMode) return;
     if (icuData.length === 0 && !isLoading) fetchData('ICU');
     if (ibsData.length === 0 && !isLoading) fetchData('IBS');
-  }, [fetchData, icuData.length, ibsData.length, isLoading, isLoggedIn]);
+  }, [fetchData, icuData.length, ibsData.length, isLoading, isLoggedIn, isGuestMode]);
 
   // Persistence (Local)
   useEffect(() => {
-    if (isLoggedIn && icuData.length > 0) localStorage.setItem(STORAGE_KEY_ICU, JSON.stringify(icuData));
-  }, [icuData, isLoggedIn]);
+    if ((isLoggedIn || isGuestMode) && icuData.length > 0) localStorage.setItem(STORAGE_KEY_ICU, JSON.stringify(icuData));
+  }, [icuData, isLoggedIn, isGuestMode]);
   useEffect(() => {
-    if (isLoggedIn && ibsData.length > 0) localStorage.setItem(STORAGE_KEY_IBS, JSON.stringify(ibsData));
-  }, [ibsData, isLoggedIn]);
+    if ((isLoggedIn || isGuestMode) && ibsData.length > 0) localStorage.setItem(STORAGE_KEY_IBS, JSON.stringify(ibsData));
+  }, [ibsData, isLoggedIn, isGuestMode]);
   useEffect(() => {
-    if (isLoggedIn) localStorage.setItem(STORAGE_KEY_SUP_ICU, JSON.stringify(icuSupervision));
-  }, [icuSupervision, isLoggedIn]);
+    if (isLoggedIn || isGuestMode) localStorage.setItem(STORAGE_KEY_SUP_ICU, JSON.stringify(icuSupervision));
+  }, [icuSupervision, isLoggedIn, isGuestMode]);
   useEffect(() => {
-    if (isLoggedIn) localStorage.setItem(STORAGE_KEY_SUP_IBS, JSON.stringify(ibsSupervision));
-  }, [ibsSupervision, isLoggedIn]);
+    if (isLoggedIn || isGuestMode) localStorage.setItem(STORAGE_KEY_SUP_IBS, JSON.stringify(ibsSupervision));
+  }, [ibsSupervision, isLoggedIn, isGuestMode]);
   useEffect(() => {
-    if (isLoggedIn) localStorage.setItem(STORAGE_KEY_SIG_ICU, JSON.stringify(icuSignatures));
-  }, [icuSignatures, isLoggedIn]);
+    if (isLoggedIn || isGuestMode) localStorage.setItem(STORAGE_KEY_SIG_ICU, JSON.stringify(icuSignatures));
+  }, [icuSignatures, isLoggedIn, isGuestMode]);
   useEffect(() => {
-    if (isLoggedIn) localStorage.setItem(STORAGE_KEY_SIG_IBS, JSON.stringify(ibsSignatures));
-  }, [ibsSignatures, isLoggedIn]);
+    if (isLoggedIn || isGuestMode) localStorage.setItem(STORAGE_KEY_SIG_IBS, JSON.stringify(ibsSignatures));
+  }, [ibsSignatures, isLoggedIn, isGuestMode]);
 
   useEffect(() => {
-    if (isLoggedIn) localStorage.setItem(STORAGE_KEY_CUSTOM_UNITS, JSON.stringify(customUnits));
-  }, [customUnits, isLoggedIn]);
+    if (isLoggedIn || isGuestMode) localStorage.setItem(STORAGE_KEY_CUSTOM_UNITS, JSON.stringify(customUnits));
+  }, [customUnits, isLoggedIn, isGuestMode]);
 
   useEffect(() => {
-    if (isLoggedIn) localStorage.setItem(STORAGE_KEY_CUSTOM_DATA, JSON.stringify(customData));
-  }, [customData, isLoggedIn]);
+    if (isLoggedIn || isGuestMode) localStorage.setItem(STORAGE_KEY_CUSTOM_DATA, JSON.stringify(customData));
+  }, [customData, isLoggedIn, isGuestMode]);
 
   useEffect(() => {
-    if (isLoggedIn) localStorage.setItem(STORAGE_KEY_CUSTOM_SUP, JSON.stringify(customSupervision));
-  }, [customSupervision, isLoggedIn]);
+    if (isLoggedIn || isGuestMode) localStorage.setItem(STORAGE_KEY_CUSTOM_SUP, JSON.stringify(customSupervision));
+  }, [customSupervision, isLoggedIn, isGuestMode]);
 
   useEffect(() => {
-    if (isLoggedIn) localStorage.setItem(STORAGE_KEY_CUSTOM_SIG, JSON.stringify(customSignatures));
-  }, [customSignatures, isLoggedIn]);
+    if (isLoggedIn || isGuestMode) localStorage.setItem(STORAGE_KEY_CUSTOM_SIG, JSON.stringify(customSignatures));
+  }, [customSignatures, isLoggedIn, isGuestMode]);
 
   useEffect(() => {
-    if (isLoggedIn) localStorage.setItem(STORAGE_KEY_TEMP_ICU, JSON.stringify(icuTemperature));
-  }, [icuTemperature, isLoggedIn]);
+    if (isLoggedIn || isGuestMode) localStorage.setItem(STORAGE_KEY_TEMP_ICU, JSON.stringify(icuTemperature));
+  }, [icuTemperature, isLoggedIn, isGuestMode]);
 
   useEffect(() => {
-    if (isLoggedIn) localStorage.setItem(STORAGE_KEY_TEMP_IBS, JSON.stringify(ibsTemperature));
-  }, [ibsTemperature, isLoggedIn]);
+    if (isLoggedIn || isGuestMode) localStorage.setItem(STORAGE_KEY_TEMP_IBS, JSON.stringify(ibsTemperature));
+  }, [ibsTemperature, isLoggedIn, isGuestMode]);
 
   useEffect(() => {
-    if (isLoggedIn) localStorage.setItem(STORAGE_KEY_CUSTOM_TEMP, JSON.stringify(customTemperature));
-  }, [customTemperature, isLoggedIn]);
+    if (isLoggedIn || isGuestMode) localStorage.setItem(STORAGE_KEY_CUSTOM_TEMP, JSON.stringify(customTemperature));
+  }, [customTemperature, isLoggedIn, isGuestMode]);
 
   const handleUpdateItem = useCallback((id: string, field: keyof InventoryItem, value: any) => {
     const updateFn = (prev: InventoryItem[]) => prev.map(item => item.idItem === id ? { ...item, [field]: value } : item);
@@ -830,6 +898,230 @@ const App: React.FC = () => {
     const supProgress = totalSup > 0 ? (completedSup / totalSup) * 100 : 0;
     return { total: currentInventoryItems.length, itemsWithDiff, itemsCounted, progressPercent, supProgress, completedSup };
   }, [currentInventoryItems, currentSupervisionSections]);
+
+  if (!isLoggedIn && !isGuestMode) {
+    return <Login onLogin={handleLogin} />;
+  }
+
+  if (isGuestMode) {
+    const MONTHS_SHORT_GUEST = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Ags', 'Sep', 'Okt', 'Nov', 'Des'];
+    
+    // expiry calculation helper for the custom layout
+    const getExpiryStatus = (item: InventoryItem) => {
+      const { ed_dd, ed_mm, ed_yy } = item;
+      if (!ed_dd || !ed_mm || !ed_yy || ed_yy.length < 4) return 'normal';
+
+      const day = parseInt(ed_dd);
+      const month = parseInt(ed_mm) - 1;
+      const year = parseInt(ed_yy);
+      const expiryDate = new Date(year, month, day);
+
+      if (isNaN(expiryDate.getTime())) return 'normal';
+
+      const today = new Date(now);
+      today.setHours(0, 0, 0, 0);
+
+      const warningLimit = new Date(today);
+      warningLimit.setMonth(warningLimit.getMonth() + 3);
+
+      if (expiryDate < today) return 'expired';
+      if (expiryDate <= warningLimit) return 'warning';
+      return 'normal';
+    };
+
+    // Filter items based on guest search term
+    const filteredGuestItems = currentInventoryItems.filter(item => 
+      item.namaItem.toLowerCase().includes(guestSearchTerm.toLowerCase()) ||
+      item.idItem.toLowerCase().includes(guestSearchTerm.toLowerCase())
+    );
+
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 font-sans selection:bg-blue-100 transition-colors duration-300 pb-12 flex flex-col justify-between">
+        <div className="w-full max-w-4xl mx-auto px-4 py-8">
+          {/* Header section with supreme minimalist design */}
+          <header className="flex items-center justify-between mb-8 border-b border-slate-200 dark:border-slate-800 pb-5">
+            <div className="flex flex-col">
+              <div className="flex items-center gap-2 mb-1.5">
+                <span className="flex h-2 w-2 relative">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+                <span className="text-[10px] font-black uppercase text-emerald-600 dark:text-emerald-400 tracking-wider">Terhubung & Otomatis Update</span>
+              </div>
+              <h1 className="text-xl md:text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tight">
+                Trolley Emergency <span className="text-blue-600 dark:text-blue-400 font-black">{activeTab}</span>
+              </h1>
+              <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold tracking-widest mt-1 uppercase">
+                FARMASI DIGITAL SYSTEM • VIEW-ONLY MODE
+              </p>
+            </div>
+            
+            <div className="flex items-center gap-3">
+              {/* Light/Dark Toggle */}
+              <button 
+                onClick={toggleTheme} 
+                className="p-2.5 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-800/60 rounded-xl transition-all border border-slate-200/60 dark:border-slate-850"
+                title="Ganti Tema"
+              >
+                {theme === 'light' ? (
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" /></svg>
+                ) : (
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 3v1m0 16v1m9-9h-1M4 9H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
+                )}
+              </button>
+              
+              {/* Admin Button */}
+              <button 
+                onClick={() => {
+                  window.location.href = window.location.origin + window.location.pathname;
+                }}
+                className="flex items-center gap-2 px-4 py-2.5 bg-slate-900 border border-slate-800 dark:bg-white dark:border-white hover:bg-slate-800 dark:hover:bg-slate-100 text-white dark:text-slate-950 font-black rounded-xl text-xs uppercase tracking-wider transition-all shadow-sm"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" />
+                </svg>
+                <span>Masuk Admin</span>
+              </button>
+            </div>
+          </header>
+
+          {/* Search Box in premium floating style */}
+          <div className="relative mb-6">
+            <span className="absolute inset-y-0 left-0 flex items-center pl-4 text-slate-400 dark:text-slate-600">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+            </span>
+            <input
+              type="text"
+              className="block w-full pl-11 pr-4 py-3.5 border border-slate-200 dark:border-slate-850 rounded-2xl bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:ring-4 focus:ring-blue-500/10 focus:border-blue-550 outline-none transition-all text-sm font-medium"
+              placeholder="Cari Nama Item..."
+              value={guestSearchTerm}
+              onChange={(e) => setGuestSearchTerm(e.target.value)}
+            />
+            {guestSearchTerm && (
+              <button 
+                onClick={() => setGuestSearchTerm("")}
+                className="absolute inset-y-0 right-0 flex items-center pr-4 text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            )}
+          </div>
+
+          {/* The Gorgeous Clean Table - Only exactly Nama, Jml Fisik, Tgl Expired columns */}
+          <div className="overflow-hidden bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm transition-all">
+            <div className="overflow-x-auto">
+              <table className="min-w-full border-separate border-spacing-0">
+                <thead className="bg-slate-50 dark:bg-slate-800/80">
+                  <tr>
+                    <th className="px-6 py-4 text-left text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest border-b border-slate-200 dark:border-slate-800">
+                      NAMA ITEM
+                    </th>
+                    <th className="px-6 py-4 text-center text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest border-b border-slate-200 dark:border-slate-800 w-32">
+                      JML FISIK
+                    </th>
+                    <th className="px-6 py-4 text-center text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest border-b border-slate-200 dark:border-slate-800 w-52">
+                      TGL EXPIRED
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900 transition-colors">
+                  {filteredGuestItems.map((item) => {
+                    const expStatus = getExpiryStatus(item);
+                    const isChecked = item.fisik !== "";
+                    
+                    let rowBgClass = '';
+                    if (expStatus === 'expired') rowBgClass = 'bg-red-50/10 dark:bg-red-950/5';
+                    else if (expStatus === 'warning') rowBgClass = 'bg-amber-50/10 dark:bg-amber-950/5';
+                    else if (isChecked) rowBgClass = 'bg-emerald-50/5 dark:bg-emerald-500/2';
+
+                    return (
+                      <tr 
+                        key={item.idItem} 
+                        className={`transition-colors hover:bg-slate-50/70 dark:hover:bg-slate-800/20 ${rowBgClass}`}
+                      >
+                        {/* NAMA ITEM Column */}
+                        <td className="px-6 py-4">
+                          <div className="text-sm font-bold text-slate-800 dark:text-slate-100">
+                            {item.namaItem}
+                          </div>
+                          {item.idItem && (
+                            <div className="text-[9.5px] font-mono text-slate-400 dark:text-slate-600 mt-1 uppercase tracking-tight flex items-center gap-1.5 select-none text-left">
+                              <span className="bg-slate-100 dark:bg-slate-800/80 px-1.5 py-0.5 rounded text-[8.5px] text-slate-500 dark:text-slate-400 font-bold font-mono">
+                                CODE: {item.idItem}
+                              </span>
+                            </div>
+                          )}
+                        </td>
+
+                        {/* JML FISIK Column */}
+                        <td className="px-6 py-4 text-center">
+                          <span className={`inline-flex items-center justify-center px-4.5 py-1.5 rounded-full text-xs font-black min-w-[4rem] text-center border-2 ${
+                            item.fisik !== ""
+                              ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900/40' 
+                              : 'bg-slate-50 dark:bg-slate-800/60 text-slate-400 dark:text-slate-500 border-slate-200 dark:border-slate-800'
+                          }`}>
+                            {item.fisik !== "" ? item.fisik : "—"}
+                          </span>
+                        </td>
+
+                        {/* TGL EXPIRED Column */}
+                        <td className="px-6 py-4">
+                          <div className="flex flex-col items-center gap-1">
+                            {item.ed_dd && item.ed_mm && item.ed_yy ? (
+                              <span className={`px-3 py-1.5 rounded-xl text-xs font-black shadow-sm flex items-center gap-1 border whitespace-nowrap ${
+                                expStatus === 'expired' 
+                                  ? 'bg-red-550/10 text-red-700 border-red-200 dark:bg-red-950/60 dark:text-red-400 dark:border-red-900' 
+                                  : expStatus === 'warning'
+                                    ? 'bg-amber-100/30 text-amber-700 border-amber-200 dark:bg-amber-950/60 dark:text-amber-400 dark:border-amber-900'
+                                    : 'bg-slate-50 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
+                              }`}>
+                                <svg className="w-3.5 h-3.5 opacity-60 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                                </svg>
+                                <span>{item.ed_dd} {MONTHS_SHORT_GUEST[parseInt(item.ed_mm) - 1] || item.ed_mm} {item.ed_yy}</span>
+                              </span>
+                            ) : (
+                              <span className="text-xs text-slate-300 dark:text-slate-700 font-bold italic">— Belum diisi —</span>
+                            )}
+                            {expStatus !== 'normal' && (
+                              <span className={`text-[9.5px] font-black tracking-wider px-2.5 py-0.5 rounded-full shadow-sm animate-pulse ${
+                                expStatus === 'expired' 
+                                  ? 'bg-red-500 text-white dark:bg-red-650' 
+                                  : 'bg-amber-500 text-white dark:bg-amber-650'
+                              }`}>
+                                {expStatus === 'expired' ? '⚠️ EXPIRED' : '⚠️ < 3 BULAN'}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {filteredGuestItems.length === 0 && (
+              <div className="flex flex-col items-center justify-center py-20 text-slate-300 dark:text-slate-700 bg-slate-50/50 dark:bg-slate-850/10">
+                <div className="w-16 h-16 bg-slate-100 dark:bg-slate-850 rounded-full flex items-center justify-center mb-4">
+                  <svg className="w-8 h-8 text-slate-300 dark:text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                </div>
+                <p className="text-xs font-black uppercase tracking-widest text-slate-400 dark:text-slate-600">
+                  {currentInventoryItems.length === 0 ? "Menunggu data dari cloud..." : "Tidak ada item ditemukan"}
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <footer className="w-full text-center mt-auto pt-6 border-t border-slate-200/50 dark:border-slate-800/50">
+          <p className="text-[9px] font-black text-slate-400 dark:text-slate-600 uppercase tracking-widest">
+            © 2024 SUPERVISI PRO • DIGITAL SUPERVISION SYSTEM
+          </p>
+        </footer>
+      </div>
+    );
+  }
 
   if (!isLoggedIn && !isGuestMode) {
     return <Login onLogin={handleLogin} />;
