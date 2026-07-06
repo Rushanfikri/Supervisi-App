@@ -9,9 +9,19 @@ interface SupervisionFormProps {
   onAddCriteria: (sectionIndex: number) => void;
   onRemoveCriteria: (sectionIndex: number, itemIndex: number) => void;
   readOnly?: boolean;
+  onSave?: () => void;
 }
 
-const SupervisionForm: React.FC<SupervisionFormProps> = ({ sections, signatures, onUpdateItem, onUpdateSignature, onAddCriteria, onRemoveCriteria, readOnly = false }) => {
+const SupervisionForm: React.FC<SupervisionFormProps> = ({ 
+  sections, 
+  signatures, 
+  onUpdateItem, 
+  onUpdateSignature, 
+  onAddCriteria, 
+  onRemoveCriteria, 
+  readOnly = false,
+  onSave
+}) => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editUraian, setEditUraian] = useState('');
   const [deleteConfirm, setDeleteConfirm] = useState<{sectionIndex: number, itemIndex: number, name: string} | null>(null);
@@ -258,6 +268,36 @@ const SupervisionForm: React.FC<SupervisionFormProps> = ({ sections, signatures,
         <h3 className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase tracking-widest pl-2 border-l-4 border-blue-600">
           Tanda Tangan Elektronik (QR Verification)
         </h3>
+        
+        {/* Save Draft Section inside Supervision Form */}
+        {!readOnly && onSave && (
+          <div className="p-5 bg-blue-50/40 dark:bg-blue-950/10 border border-blue-100 dark:border-blue-900/30 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 transition-colors duration-300">
+            <div className="flex items-start gap-3">
+              <div className="p-2 bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-lg shrink-0">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                </svg>
+              </div>
+              <div>
+                <h4 className="text-xs font-black text-blue-900 dark:text-blue-300 uppercase tracking-tight">Simpan Hasil Supervisi (Draft)</h4>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+                  Jika tanda tangan belum lengkap, Anda dapat menyimpan hasil supervisi ini terlebih dahulu ke cloud agar formulir dan isian data aman serta dapat diakses kembali kapan saja.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={onSave}
+              className="w-full sm:w-auto shrink-0 flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-black text-xs uppercase tracking-wider rounded-xl transition-all shadow-lg shadow-blue-500/10 active:scale-[0.98]"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" />
+              </svg>
+              <span>Simpan Progress ke Cloud</span>
+            </button>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {renderSignatureBox('supervisor', 'Supervisor')}
           {renderSignatureBox('kaRuang', 'Kepala Ruang')}

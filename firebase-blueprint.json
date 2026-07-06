@@ -1,0 +1,112 @@
+{
+  "entities": {
+    "SyncPayload": {
+      "title": "SyncPayload",
+      "description": "Form data and inventory monitoring payloads synchronized in real-time.",
+      "type": "object",
+      "properties": {
+        "icuData": {
+          "type": "array",
+          "description": "Inventory items list for ICU unit"
+        },
+        "ibsData": {
+          "type": "array",
+          "description": "Inventory items list for IBS unit"
+        },
+        "icuSupervision": {
+          "type": "array",
+          "description": "Supervision checklist sections for ICU unit"
+        },
+        "ibsSupervision": {
+          "type": "array",
+          "description": "Supervision checklist sections for IBS unit"
+        },
+        "icuSignatures": {
+          "type": "object",
+          "description": "Digital signatures for ICU supervision"
+        },
+        "ibsSignatures": {
+          "type": "object",
+          "description": "Digital signatures for IBS supervision"
+        },
+        "icuTemperature": {
+          "type": "array",
+          "description": "Temperature monitoring logs for ICU"
+        },
+        "ibsTemperature": {
+          "type": "array",
+          "description": "Temperature monitoring logs for IBS"
+        },
+        "customUnits": {
+          "type": "array",
+          "description": "List of dynamically added custom wards/units"
+        },
+        "customData": {
+          "type": "object",
+          "description": "Dynamic inventory items data mapped by ward name"
+        },
+        "customSupervision": {
+          "type": "object",
+          "description": "Dynamic supervision data mapped by ward name"
+        },
+        "customSignatures": {
+          "type": "object",
+          "description": "Dynamic digital signatures mapped by ward name"
+        },
+        "customTemperature": {
+          "type": "object",
+          "description": "Dynamic temperature monitoring logs mapped by ward name"
+        },
+        "timestamp": {
+          "type": "integer",
+          "description": "The epoch timestamp when this synchronized data was last updated"
+        },
+        "syncId": {
+          "type": "string",
+          "description": "The unique ID for real-time synchronization document"
+        }
+      }
+    },
+    "DraftDocument": {
+      "title": "DraftDocument",
+      "description": "A saved working session containing a descriptive name and a snapshotted SyncPayload.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Descriptive name given to the draft"
+        },
+        "unit": {
+          "type": "string",
+          "description": "The active ward/unit of this draft"
+        },
+        "view": {
+          "type": "string",
+          "description": "The active view mode (inventory, supervision, or temperature)"
+        },
+        "viewLabel": {
+          "type": "string",
+          "description": "A human-readable label for the active view mode"
+        },
+        "timestamp": {
+          "type": "integer",
+          "description": "The epoch timestamp when this draft was saved"
+        },
+        "payload": {
+          "$ref": "#/entities/SyncPayload"
+        }
+      },
+      "required": ["name", "unit", "view", "timestamp", "payload"]
+    }
+  },
+  "firestore": {
+    "/sync/{syncId}": {
+      "schema": "SyncPayload",
+      "description": "Global or group-wide single synchronization document for real-time live data sharing."
+    },
+    "/drafts/{draftId}": {
+      "schema": "DraftDocument",
+      "description": "Saved document drafts of working sessions allowing offline/partial progress to be continued later."
+    }
+  }
+}

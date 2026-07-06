@@ -13,6 +13,7 @@ interface InventoryTableProps {
   signatures: SupervisionSignatures;
   onUpdateSignature: (role: keyof SupervisionSignatures, field: 'nama' | 'nip', value: string) => void;
   readOnly?: boolean;
+  onSave?: () => void;
 }
 
 const InventoryTable: React.FC<InventoryTableProps> = ({ 
@@ -23,7 +24,8 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
   onRemoveItem,
   signatures, 
   onUpdateSignature,
-  readOnly = false
+  readOnly = false,
+  onSave
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -124,66 +126,102 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
     const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${qrData}`;
 
     return (
-      <div className="mt-8 flex flex-col items-start">
-        <h3 className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase tracking-widest pl-2 border-l-4 border-blue-600 mb-4">
-          Pengesahan Stock Opname
+      <div className="mt-8 flex flex-col gap-4">
+        <h3 className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase tracking-widest pl-2 border-l-4 border-blue-600">
+          Pengesahan & Penyimpanan Stock Opname
         </h3>
-        <div className="w-full max-w-sm flex flex-col p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm space-y-3 transition-colors duration-300">
-          <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-2">
-            <p className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">
-              Supervisor Unit
-            </p>
-            {sig.timestamp && (
-              <p className="text-[8px] font-bold text-slate-400 dark:text-slate-600 tracking-tighter italic">
-                {sig.timestamp}
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+          {/* Signature Card */}
+          <div className="w-full max-w-md flex flex-col p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm space-y-3 transition-colors duration-300">
+            <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-2">
+              <p className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">
+                Supervisor Unit
               </p>
-            )}
-          </div>
-          
-          <div className="flex flex-col gap-2">
-            <label className="text-[9px] font-bold text-slate-400 dark:text-slate-600 uppercase">Nama Lengkap</label>
-            <input
-              type="text"
-              disabled={readOnly}
-              className="w-full px-3 py-2 text-xs font-bold border border-slate-100 dark:border-slate-800 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-700 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all disabled:opacity-50"
-              placeholder="Nama Supervisor..."
-              value={sig.nama}
-              onChange={(e) => onUpdateSignature('supervisor', 'nama', e.target.value)}
-            />
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <label className="text-[9px] font-bold text-slate-400 dark:text-slate-600 uppercase">Nomor NIP</label>
-            <input
-              type="text"
-              disabled={readOnly}
-              className="w-full px-3 py-2 text-xs font-bold border border-slate-100 dark:border-slate-800 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-700 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all disabled:opacity-50"
-              placeholder="NIP Supervisor..."
-              value={sig.nip}
-              onChange={(e) => onUpdateSignature('supervisor', 'nip', e.target.value)}
-            />
-          </div>
-
-          <div className="flex flex-col items-center justify-center py-4 border-t border-slate-100 dark:border-slate-800 mt-2 gap-3">
-            <p className="text-[9px] font-bold text-slate-400 dark:text-slate-600 uppercase tracking-tighter">QR VERIFICATION</p>
-            <div className="w-28 h-28 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-800 flex items-center justify-center overflow-hidden">
-              {hasData ? (
-                <img src={qrUrl} alt="Signature QR" className="w-full h-full p-1 dark:invert-[0.05]" />
-              ) : (
-                <div className="flex flex-col items-center gap-1 opacity-20 dark:opacity-40">
-                  <svg className="w-8 h-8 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
-                  </svg>
-                  <span className="text-[8px] font-black uppercase text-slate-400">Ready</span>
-                </div>
+              {sig.timestamp && (
+                <p className="text-[8px] font-bold text-slate-400 dark:text-slate-600 tracking-tighter italic">
+                  {sig.timestamp}
+                </p>
               )}
             </div>
-            {hasData && (
-              <span className="text-[8px] font-black text-emerald-600 dark:text-emerald-500 uppercase bg-emerald-50 dark:bg-emerald-900/20 px-2 py-0.5 rounded-full">
-                Verified Signatory
-              </span>
-            )}
+            
+            <div className="flex flex-col gap-2">
+              <label className="text-[9px] font-bold text-slate-400 dark:text-slate-600 uppercase">Nama Lengkap</label>
+              <input
+                type="text"
+                disabled={readOnly}
+                className="w-full px-3 py-2 text-xs font-bold border border-slate-100 dark:border-slate-800 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-700 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all disabled:opacity-50"
+                placeholder="Nama Supervisor..."
+                value={sig.nama}
+                onChange={(e) => onUpdateSignature('supervisor', 'nama', e.target.value)}
+              />
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <label className="text-[9px] font-bold text-slate-400 dark:text-slate-600 uppercase">Nomor NIP</label>
+              <input
+                type="text"
+                disabled={readOnly}
+                className="w-full px-3 py-2 text-xs font-bold border border-slate-100 dark:border-slate-800 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-700 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all disabled:opacity-50"
+                placeholder="NIP Supervisor..."
+                value={sig.nip}
+                onChange={(e) => onUpdateSignature('supervisor', 'nip', e.target.value)}
+              />
+            </div>
+
+            <div className="flex flex-col items-center justify-center py-4 border-t border-slate-100 dark:border-slate-800 mt-2 gap-3">
+              <p className="text-[9px] font-bold text-slate-400 dark:text-slate-600 uppercase tracking-tighter">QR VERIFICATION</p>
+              <div className="w-28 h-28 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-800 flex items-center justify-center overflow-hidden">
+                {hasData ? (
+                  <img src={qrUrl} alt="Signature QR" className="w-full h-full p-1 dark:invert-[0.05]" />
+                ) : (
+                  <div className="flex flex-col items-center gap-1 opacity-20 dark:opacity-40">
+                    <svg className="w-8 h-8 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+                    </svg>
+                    <span className="text-[8px] font-black uppercase text-slate-400">Ready</span>
+                  </div>
+                )}
+              </div>
+              {hasData && (
+                <span className="text-[8px] font-black text-emerald-600 dark:text-emerald-500 uppercase bg-emerald-50 dark:bg-emerald-900/20 px-2 py-0.5 rounded-full">
+                  Verified Signatory
+                </span>
+              )}
+            </div>
           </div>
+
+          {/* New Save Progress Card! */}
+          {!readOnly && onSave && (
+            <div className="w-full max-w-md flex flex-col p-6 bg-blue-50/40 dark:bg-blue-950/10 border border-blue-100 dark:border-blue-900/30 rounded-2xl shadow-sm space-y-4 transition-colors duration-300">
+              <div className="flex items-center gap-2 pb-2 border-b border-blue-100/50 dark:border-blue-950/20">
+                <div className="p-2 bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-lg">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                  </svg>
+                </div>
+                <div>
+                  <h4 className="text-xs font-black text-blue-900 dark:text-blue-300 uppercase tracking-tight">Simpan Progress (Draft)</h4>
+                  <p className="text-[9px] text-blue-500/80 font-bold uppercase tracking-wider">Simpan hasil isian sebelum ttd lengkap</p>
+                </div>
+              </div>
+
+              <p className="text-xs font-medium text-slate-600 dark:text-slate-400 leading-relaxed">
+                Anda dapat menyimpan data hasil stock opname yang sedang diisi kapan saja ke cloud. Data ini dapat dibuka dan dilanjutkan kembali oleh unit atau pihak lain kapan pun sebelum penandatanganan selesai dilakukan.
+              </p>
+
+              <button
+                type="button"
+                onClick={onSave}
+                className="w-full flex items-center justify-center gap-2 py-3 bg-blue-600 hover:bg-blue-700 text-white font-black text-xs uppercase tracking-wider rounded-xl transition-all shadow-lg shadow-blue-500/10 hover:shadow-blue-500/20 active:scale-[0.98]"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" />
+                </svg>
+                <span>Simpan Hasil Sementara ke Cloud</span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
     );

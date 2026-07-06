@@ -2,14 +2,13 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import InventoryTable from './components/InventoryTable';
 import SupervisionForm from './components/SupervisionForm';
-import TemperatureMonitoring from './components/TemperatureMonitoring';
 import Login from './components/Login';
-import { Department, InventoryItem, AppView, SupervisionSection, SupervisionItem, SupervisionSignatures, TemperatureEntry } from './types';
+import { Department, InventoryItem, AppView, SupervisionSection, SupervisionItem, SupervisionSignatures } from './types';
 import { ICU_SHEET_URL, IBS_SHEET_URL, MONTHS, YEARS, CLOUD_SYNC_ID } from './constants';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { db, auth } from './firebaseConfig';
-import { doc, getDoc, setDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, setDoc, deleteDoc, onSnapshot, collection, addDoc, getDocs } from 'firebase/firestore';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 
 const STORAGE_KEY_ICU = 'rs_inventory_icu_data_v2';
@@ -18,15 +17,59 @@ const STORAGE_KEY_SUP_ICU = 'rs_supervision_icu_v1';
 const STORAGE_KEY_SUP_IBS = 'rs_supervision_ibs_v1';
 const STORAGE_KEY_SIG_ICU = 'rs_signatures_icu_v1';
 const STORAGE_KEY_SIG_IBS = 'rs_signatures_ibs_v1';
-const STORAGE_KEY_TEMP_ICU = 'rs_temperature_icu_v1';
-const STORAGE_KEY_TEMP_IBS = 'rs_temperature_ibs_v1';
 const STORAGE_KEY_TIMESTAMP = 'rs_inventory_last_update';
 const STORAGE_KEY_AUTH = 'rs_inventory_auth_status';
 const STORAGE_KEY_CUSTOM_UNITS = 'rs_inventory_custom_units';
 const STORAGE_KEY_CUSTOM_DATA = 'rs_inventory_custom_data';
 const STORAGE_KEY_CUSTOM_SUP = 'rs_supervision_custom_data';
 const STORAGE_KEY_CUSTOM_SIG = 'rs_signatures_custom_data';
-const STORAGE_KEY_CUSTOM_TEMP = 'rs_temperature_custom_data';
+
+enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string | null;
+    email?: string | null;
+    emailVerified?: boolean | null;
+    isAnonymous?: boolean | null;
+    tenantId?: string | null;
+    providerInfo?: {
+      providerId?: string | null;
+      email?: string | null;
+    }[];
+  }
+}
+
+function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+      tenantId: auth.currentUser?.tenantId,
+      providerInfo: auth.currentUser?.providerData?.map(provider => ({
+        providerId: provider.providerId,
+        email: provider.email,
+      })) || []
+    },
+    operationType,
+    path
+  };
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
 
 const INITIAL_SIGNATURES: SupervisionSignatures = {
   supervisor: { nama: '', nip: '', timestamp: '' },
@@ -120,6 +163,17 @@ const App: React.FC = () => {
   // Period state for Supervision
   const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+
+  // Draft State
+  const [draftsList, setDraftsList] = useState<any[]>([]);
+  const [isDraftModalOpen, setIsDraftModalOpen] = useState(false);
+  const [activeDraftId, setActiveDraftId] = useState<string | null>(null);
+  const [activeDraftName, setActiveDraftName] = useState<string | null>(null);
+  
+  // Save Draft Dialog State
+  const [isSaveDraftDialogOpen, setIsSaveDraftDialogOpen] = useState(false);
+  const [newDraftNameInput, setNewDraftNameInput] = useState("");
+  const [isSavingDraft, setIsSavingDraft] = useState(false);
 
   useEffect(() => {
     if (theme === 'dark') {
@@ -228,20 +282,7 @@ const App: React.FC = () => {
     return saved ? JSON.parse(saved) : {};
   });
 
-  const [icuTemperature, setIcuTemperature] = useState<TemperatureEntry[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY_TEMP_ICU);
-    return saved ? JSON.parse(saved) : [];
-  });
 
-  const [ibsTemperature, setIbsTemperature] = useState<TemperatureEntry[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY_TEMP_IBS);
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  const [customTemperature, setCustomTemperature] = useState<Record<string, TemperatureEntry[]>>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY_CUSTOM_TEMP);
-    return saved ? JSON.parse(saved) : {};
-  });
 
   const saveToFallbackCloud = useCallback(async (payload: any) => {
     try {
@@ -271,13 +312,10 @@ const App: React.FC = () => {
           if (remote.ibsSupervision) setIbsSupervision(remote.ibsSupervision);
           if (remote.icuSignatures) setIcuSignatures(remote.icuSignatures);
           if (remote.ibsSignatures) setIbsSignatures(remote.ibsSignatures);
-          if (remote.icuTemperature) setIcuTemperature(remote.icuTemperature);
-          if (remote.ibsTemperature) setIbsTemperature(remote.ibsTemperature);
           if (remote.customUnits) setCustomUnits(remote.customUnits);
           if (remote.customData) setCustomData(remote.customData);
           if (remote.customSupervision) setCustomSupervision(remote.customSupervision);
           if (remote.customSignatures) setCustomSignatures(remote.customSignatures);
-          if (remote.customTemperature) setCustomTemperature(remote.customTemperature);
           
           lastCloudUpdate.current = remote.timestamp;
           localStorage.setItem(STORAGE_KEY_TIMESTAMP, remote.timestamp.toString());
@@ -288,9 +326,8 @@ const App: React.FC = () => {
     }
   }, [
     setIcuData, setIbsData, setIcuSupervision, setIbsSupervision,
-    setIcuSignatures, setIbsSignatures, setIcuTemperature, setIbsTemperature,
-    setCustomUnits, setCustomData, setCustomSupervision, setCustomSignatures,
-    setCustomTemperature
+    setIcuSignatures, setIbsSignatures,
+    setCustomUnits, setCustomData, setCustomSupervision, setCustomSignatures
   ]);
 
   useEffect(() => {
@@ -387,7 +424,7 @@ const App: React.FC = () => {
       const timestamp = Date.now();
       const payload = {
         icuData, ibsData, icuSupervision, ibsSupervision, icuSignatures, ibsSignatures,
-        icuTemperature, ibsTemperature, customUnits, customData, customSupervision, customSignatures, customTemperature,
+        customUnits, customData, customSupervision, customSignatures,
         timestamp,
         syncId: CLOUD_SYNC_ID
       };
@@ -398,6 +435,9 @@ const App: React.FC = () => {
         success = true;
       } catch (err) {
         console.warn("Firestore save failed, trying fallback...", err);
+        if (err instanceof Error && err.message.includes("permission")) {
+          handleFirestoreError(err, OperationType.WRITE, `sync/${CLOUD_SYNC_ID}`);
+        }
       }
 
       try {
@@ -422,6 +462,171 @@ const App: React.FC = () => {
     }
   };
 
+  const getSuggestedDraftName = useCallback(() => {
+    const viewLabel = view === 'inventory' ? 'Stock Opname' : 'Supervisi';
+    const nowTime = new Date();
+    const pad = (num: number) => String(num).padStart(2, '0');
+    const timeStr = `${pad(nowTime.getHours())}:${pad(nowTime.getMinutes())}`;
+    const dateStr = `${pad(nowTime.getDate())}/${pad(nowTime.getMonth() + 1)}`;
+    return `Draft ${viewLabel} ${activeTab} - ${dateStr} (${timeStr})`;
+  }, [view, activeTab]);
+
+  const handleOpenSaveDraftDialog = () => {
+    if (!isLoggedIn) {
+      alert("Silakan masuk terlebih dahulu.");
+      return;
+    }
+    setNewDraftNameInput(activeDraftName || getSuggestedDraftName());
+    setIsSaveDraftDialogOpen(true);
+  };
+
+  const fetchDrafts = useCallback(async () => {
+    try {
+      let querySnapshot;
+      try {
+        querySnapshot = await getDocs(collection(db, "drafts"));
+      } catch (err) {
+        handleFirestoreError(err, OperationType.LIST, "drafts");
+        return;
+      }
+      const loadedDrafts: any[] = [];
+      querySnapshot.forEach((docSnap) => {
+        loadedDrafts.push({
+          id: docSnap.id,
+          ...docSnap.data()
+        });
+      });
+      // Sort drafts by timestamp descending (newest first)
+      loadedDrafts.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      setDraftsList(loadedDrafts);
+    } catch (err) {
+      console.error("Gagal mengambil daftar draft dari Firestore:", err);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isLoggedIn && isDraftModalOpen) {
+      fetchDrafts();
+    }
+  }, [isLoggedIn, isDraftModalOpen, fetchDrafts]);
+
+  const handleSaveDraft = async (draftName: string, isUpdate: boolean = false) => {
+    if (!isLoggedIn) {
+      alert("Silakan masuk terlebih dahulu.");
+      return;
+    }
+    if (!draftName.trim()) {
+      alert("Nama draft tidak boleh kosong.");
+      return;
+    }
+    setIsSavingDraft(true);
+    try {
+      const timestamp = Date.now();
+      const payload = {
+        icuData, ibsData, icuSupervision, ibsSupervision, icuSignatures, ibsSignatures,
+        customUnits, customData, customSupervision, customSignatures,
+      };
+
+      const viewName = view === 'inventory' ? 'Stock Opname' : 'Supervisi';
+
+      const draftData = {
+        name: draftName,
+        unit: activeTab,
+        view: view,
+        viewLabel: viewName,
+        timestamp,
+        payload
+      };
+
+      if (isUpdate && activeDraftId) {
+        // Update existing document
+        try {
+          await setDoc(doc(db, "drafts", activeDraftId), draftData, { merge: true });
+        } catch (writeErr) {
+          handleFirestoreError(writeErr, OperationType.WRITE, `drafts/${activeDraftId}`);
+          return;
+        }
+        setActiveDraftName(draftName);
+        alert(`✅ Draft "${draftName}" berhasil diperbarui!`);
+      } else {
+        // Add new document
+        let docRef;
+        try {
+          docRef = await addDoc(collection(db, "drafts"), draftData);
+        } catch (createErr) {
+          handleFirestoreError(createErr, OperationType.CREATE, "drafts");
+          return;
+        }
+        setActiveDraftId(docRef.id);
+        setActiveDraftName(draftName);
+        alert(`✅ Draft "${draftName}" berhasil disimpan!`);
+      }
+
+      setIsSaveDraftDialogOpen(false);
+      fetchDrafts();
+    } catch (err) {
+      console.error("Gagal menyimpan draft:", err);
+      alert("❌ Gagal menyimpan draft ke Cloud. Silakan periksa koneksi internet Anda.");
+    } finally {
+      setIsSavingDraft(false);
+    }
+  };
+
+  const handleDeleteDraft = async (draftId: string, event: React.MouseEvent) => {
+    event.stopPropagation(); // Prevent loading the draft when clicking delete
+    if (!confirm("Apakah Anda yakin ingin menghapus draft ini?")) return;
+    
+    try {
+      try {
+        await deleteDoc(doc(db, "drafts", draftId));
+      } catch (err) {
+        handleFirestoreError(err, OperationType.DELETE, `drafts/${draftId}`);
+        return;
+      }
+      if (activeDraftId === draftId) {
+        setActiveDraftId(null);
+        setActiveDraftName(null);
+      }
+      fetchDrafts();
+      alert("🗑️ Draft berhasil dihapus dari Cloud.");
+    } catch (err) {
+      console.error("Gagal menghapus draft:", err);
+      alert("❌ Gagal menghapus draft.");
+    }
+  };
+
+  const handleLoadDraft = (draft: any) => {
+    if (!draft.payload) {
+      alert("Data draft tidak valid.");
+      return;
+    }
+    
+    const { payload } = draft;
+    isInternalChange.current = true;
+    
+    // Set all state
+    if (payload.icuData) setIcuData(payload.icuData);
+    if (payload.ibsData) setIbsData(payload.ibsData);
+    if (payload.icuSupervision) setIcuSupervision(payload.icuSupervision);
+    if (payload.ibsSupervision) setIbsSupervision(payload.ibsSupervision);
+    if (payload.icuSignatures) setIcuSignatures(payload.icuSignatures);
+    if (payload.ibsSignatures) setIbsSignatures(payload.ibsSignatures);
+    if (payload.customUnits) setCustomUnits(payload.customUnits);
+    if (payload.customData) setCustomData(payload.customData);
+    if (payload.customSupervision) setCustomSupervision(payload.customSupervision);
+    if (payload.customSignatures) setCustomSignatures(payload.customSignatures);
+    
+    // Set active unit and view if present
+    if (draft.unit) setActiveTab(draft.unit as Department);
+    if (draft.view) setView(draft.view as AppView);
+    
+    setActiveDraftId(draft.id);
+    setActiveDraftName(draft.name);
+    
+    setIsDraftModalOpen(false);
+    alert(`✅ Draft "${draft.name}" berhasil dimuat! Anda sekarang dapat menandatangani atau menyunting formulir.`);
+  };
+
   // Real-time Listener (Hanya download)
   useEffect(() => {
     if (!isLoggedIn && !isGuestMode) return;
@@ -440,13 +645,10 @@ const App: React.FC = () => {
           if (remote.ibsSupervision) setIbsSupervision(remote.ibsSupervision);
           if (remote.icuSignatures) setIcuSignatures(remote.icuSignatures);
           if (remote.ibsSignatures) setIbsSignatures(remote.ibsSignatures);
-          if (remote.icuTemperature) setIcuTemperature(remote.icuTemperature);
-          if (remote.ibsTemperature) setIbsTemperature(remote.ibsTemperature);
           if (remote.customUnits) setCustomUnits(remote.customUnits);
           if (remote.customData) setCustomData(remote.customData);
           if (remote.customSupervision) setCustomSupervision(remote.customSupervision);
           if (remote.customSignatures) setCustomSignatures(remote.customSignatures);
-          if (remote.customTemperature) setCustomTemperature(remote.customTemperature);
           
           lastCloudUpdate.current = remote.timestamp || Date.now();
           localStorage.setItem(STORAGE_KEY_TIMESTAMP, lastCloudUpdate.current.toString());
@@ -507,17 +709,7 @@ const App: React.FC = () => {
     if (isLoggedIn || isGuestMode) localStorage.setItem(STORAGE_KEY_CUSTOM_SIG, JSON.stringify(customSignatures));
   }, [customSignatures, isLoggedIn, isGuestMode]);
 
-  useEffect(() => {
-    if (isLoggedIn || isGuestMode) localStorage.setItem(STORAGE_KEY_TEMP_ICU, JSON.stringify(icuTemperature));
-  }, [icuTemperature, isLoggedIn, isGuestMode]);
 
-  useEffect(() => {
-    if (isLoggedIn || isGuestMode) localStorage.setItem(STORAGE_KEY_TEMP_IBS, JSON.stringify(ibsTemperature));
-  }, [ibsTemperature, isLoggedIn, isGuestMode]);
-
-  useEffect(() => {
-    if (isLoggedIn || isGuestMode) localStorage.setItem(STORAGE_KEY_CUSTOM_TEMP, JSON.stringify(customTemperature));
-  }, [customTemperature, isLoggedIn, isGuestMode]);
 
   const handleUpdateItem = useCallback((id: string, field: keyof InventoryItem, value: any) => {
     const updateFn = (prev: InventoryItem[]) => prev.map(item => item.idItem === id ? { ...item, [field]: value } : item);
@@ -640,23 +832,6 @@ const App: React.FC = () => {
     isInternalChange.current = false;
   }, [activeTab]);
 
-  const handleUpdateTemperature = useCallback((date: string, type: 'room' | 'cold', timeSlot: 'pagi' | 'siang' | 'malam' | 'humidity', value: number | string) => {
-    const updateFn = (prev: TemperatureEntry[]) => {
-      const next = [...prev];
-      const entryIdx = next.findIndex(e => e.date === date && e.type === type);
-      if (entryIdx >= 0) {
-        next[entryIdx] = { ...next[entryIdx], [timeSlot]: value };
-      } else {
-        next.push({ date, type, pagi: '', siang: '', malam: '', humidity: '', [timeSlot]: value });
-      }
-      return next;
-    };
-    if (activeTab === 'ICU') setIcuTemperature(updateFn);
-    else if (activeTab === 'IBS') setIbsTemperature(updateFn);
-    else setCustomTemperature(prev => ({ ...prev, [activeTab]: updateFn(prev[activeTab] || []) }));
-    isInternalChange.current = false;
-  }, [activeTab]);
-
   const handleStartAddUnit = useCallback(() => {
     setIsAddingUnit(true);
     setNewUnitName("");
@@ -678,7 +853,6 @@ const App: React.FC = () => {
     setCustomData(prev => ({ ...prev, [normalizedName]: [...ibsData] }));
     setCustomSupervision(prev => ({ ...prev, [normalizedName]: JSON.parse(JSON.stringify(ibsSupervision)) }));
     setCustomSignatures(prev => ({ ...prev, [normalizedName]: JSON.parse(JSON.stringify(INITIAL_SIGNATURES)) }));
-    setCustomTemperature(prev => ({ ...prev, [normalizedName]: [] }));
     setActiveTab(normalizedName);
     setRefreshId(prev => prev + 1);
     setIsAddingUnit(false);
@@ -699,9 +873,6 @@ const App: React.FC = () => {
       localStorage.removeItem(STORAGE_KEY_CUSTOM_DATA);
       localStorage.removeItem(STORAGE_KEY_CUSTOM_SUP);
       localStorage.removeItem(STORAGE_KEY_CUSTOM_SIG);
-      localStorage.removeItem(STORAGE_KEY_TEMP_ICU);
-      localStorage.removeItem(STORAGE_KEY_TEMP_IBS);
-      localStorage.removeItem(STORAGE_KEY_CUSTOM_TEMP);
       
       setIcuData([]);
       setIbsData([]);
@@ -709,13 +880,10 @@ const App: React.FC = () => {
       setIbsSupervision(JSON.parse(JSON.stringify(INITIAL_SUPERVISION_SECTIONS)));
       setIcuSignatures(JSON.parse(JSON.stringify(INITIAL_SIGNATURES)));
       setIbsSignatures(JSON.parse(JSON.stringify(INITIAL_SIGNATURES)));
-      setIcuTemperature([]);
-      setIbsTemperature([]);
       setCustomUnits([]);
       setCustomData({});
       setCustomSupervision({});
       setCustomSignatures({});
-      setCustomTemperature({});
       
       setIsLoading(true);
       await Promise.all([fetchData('ICU', true), fetchData('IBS', true)]);
@@ -749,12 +917,6 @@ const App: React.FC = () => {
     if (activeTab === 'IBS') return ibsSignatures;
     return customSignatures[activeTab] || INITIAL_SIGNATURES;
   }, [activeTab, icuSignatures, ibsSignatures, customSignatures]);
-
-  const currentTemperatureEntries = useMemo(() => {
-    if (activeTab === 'ICU') return icuTemperature;
-    if (activeTab === 'IBS') return ibsTemperature;
-    return customTemperature[activeTab] || [];
-  }, [activeTab, icuTemperature, ibsTemperature, customTemperature]);
 
   const getExpiryStatus = (item: InventoryItem) => {
     const { ed_dd, ed_mm, ed_yy } = item;
@@ -876,36 +1038,6 @@ const App: React.FC = () => {
         doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.text(sig.nama || '___________________', xPos, 100);
         doc.setFont('helvetica', 'normal'); doc.text(`NIP: ${sig.nip || '___________________'}`, xPos, 105);
       }
-    } else if (view === 'temperature') {
-      const daysInMonth = new Date(selectedYear, selectedMonth + 1, 0).getDate();
-      const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
-      
-      doc.setFontSize(12); doc.setFont('helvetica', 'bold');
-      doc.text('1. SUHU RUANGAN (15-25°C)', 14, 38);
-      
-      const roomRows = days.map(d => {
-        const dateStr = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-        const e = currentTemperatureEntries.find(entry => entry.date === dateStr && entry.type === 'room');
-        return [d, e?.pagi || '-', e?.siang || '-', e?.malam || '-', e?.humidity ? `${e.humidity}%` : '-'];
-      });
-      autoTable(doc, {
-        startY: 42,
-        head: [['TGL', 'PAGI', 'SIANG', 'MALAM', 'HR (%)']],
-        body: roomRows, theme: 'grid', headStyles: { fillColor: [59, 130, 246] }, bodyStyles: { fontSize: 7 }
-      });
-      
-      const nextY = (doc as any).lastAutoTable.finalY + 10;
-      doc.text('2. SUHU COLD / KULKAS (2-8°C)', 14, nextY);
-      const coldRows = days.map(d => {
-        const dateStr = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-        const e = currentTemperatureEntries.find(entry => entry.date === dateStr && entry.type === 'cold');
-        return [d, e?.pagi || '-', e?.siang || '-', e?.malam || '-', e?.humidity ? `${e.humidity}%` : '-'];
-      });
-      autoTable(doc, {
-        startY: nextY + 4,
-        head: [['TGL', 'PAGI', 'SIANG', 'MALAM', 'HR (%)']],
-        body: coldRows, theme: 'grid', headStyles: { fillColor: [16, 185, 129] }, bodyStyles: { fontSize: 7 }
-      });
     }
     doc.save(`${activeTab}_${view}_${now.toISOString().split('T')[0]}.pdf`);
     setIsLoading(false);
@@ -1167,8 +1299,7 @@ const App: React.FC = () => {
               <div className="space-y-1">
                 {[
                   { id: 'inventory', label: 'Stock Opname', icon: 'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4' }, 
-                  { id: 'supervision', label: 'Supervisi', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2' },
-                  { id: 'temperature', label: 'Monitoring Suhu', icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' }
+                  { id: 'supervision', label: 'Supervisi', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2' }
                 ].map((v) => (
                   <button key={v.id} onClick={() => { setView(v.id as AppView); if (window.innerWidth < 1024) setIsSidebarOpen(false); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${view === v.id ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={v.icon}></path></svg>
@@ -1289,24 +1420,28 @@ const App: React.FC = () => {
 
             <div className="flex items-center gap-2">
               {!isGuestMode && (
-                <button 
-                  onClick={handleManualSync}
-                  disabled={isSyncing || isLoading}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-xl transition-all font-bold text-[10px] md:text-xs shadow-lg ${
-                    isSyncing 
-                    ? 'bg-slate-400 cursor-not-allowed' 
-                    : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-100 dark:shadow-emerald-900/20'
-                  }`}
-                >
-                  {isSyncing ? (
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  ) : (
+                <>
+                  <button 
+                    onClick={handleOpenSaveDraftDialog}
+                    disabled={isLoading}
+                    className="flex items-center gap-2 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition-all font-bold text-[10px] md:text-xs shadow-lg shadow-emerald-100 dark:shadow-emerald-900/20"
+                  >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7"></path>
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
                     </svg>
-                  )}
-                  <span className="hidden md:inline">{isSyncing ? 'Menyimpan...' : 'Simpan ke Cloud'}</span>
-                </button>
+                    <span>Simpan Draft</span>
+                  </button>
+
+                  <button 
+                    onClick={() => setIsDraftModalOpen(true)}
+                    className="flex items-center gap-2 px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl transition-all font-bold text-[10px] md:text-xs shadow-lg shadow-amber-100 dark:shadow-amber-900/20"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                    </svg>
+                    <span>Daftar Draft</span>
+                  </button>
+                </>
               )}
 
               <button onClick={toggleTheme} className="p-2.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all border border-slate-100 dark:border-slate-800">
@@ -1333,7 +1468,7 @@ const App: React.FC = () => {
               <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm transition-colors duration-300">
                 <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase mb-1">Status Unit</p>
                 <p className="text-xl md:text-2xl font-black text-slate-900 dark:text-slate-100">
-                  {view === 'inventory' ? `TROLLEY ${activeTab}` : (view === 'temperature' ? `SUHU ${activeTab}` : `SUPERVISI ${activeTab}`)}
+                  {view === 'inventory' ? `TROLLEY ${activeTab}` : `SUPERVISI ${activeTab}`}
                 </p>
               </div>
               <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm transition-colors duration-300">
@@ -1341,18 +1476,18 @@ const App: React.FC = () => {
                   <div>
                      <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase mb-1">Progress</p>
                      <p className="text-xl md:text-2xl font-black text-emerald-600 dark:text-emerald-500">
-                       {view === 'inventory' ? stats.itemsCounted : (view === 'temperature' ? currentTemperatureEntries.length : stats.completedSup)} 
+                       {view === 'inventory' ? stats.itemsCounted : stats.completedSup} 
                        <span className="text-sm font-medium text-slate-400 dark:text-slate-600 ml-1">
-                        / {view === 'inventory' ? stats.total : (view === 'temperature' ? 31 : 25)}
+                        / {view === 'inventory' ? stats.total : 25}
                        </span>
                      </p>
                   </div>
                   <p className="text-sm font-black text-emerald-600 dark:text-emerald-500">
-                    {Math.round(view === 'inventory' ? stats.progressPercent : (view === 'temperature' ? (currentTemperatureEntries.length / 31) * 100 : stats.supProgress))}%
+                    {Math.round(view === 'inventory' ? stats.progressPercent : stats.supProgress)}%
                   </p>
                 </div>
                 <div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full mt-3 overflow-hidden">
-                  <div className="h-full bg-emerald-500 dark:bg-emerald-600 transition-all duration-500" style={{ width: `${view === 'inventory' ? stats.progressPercent : (view === 'temperature' ? (currentTemperatureEntries.length / 31) * 100 : stats.supProgress)}%` }}></div>
+                  <div className="h-full bg-emerald-500 dark:bg-emerald-600 transition-all duration-500" style={{ width: `${view === 'inventory' ? stats.progressPercent : stats.supProgress}%` }}></div>
                 </div>
               </div>
               <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm transition-colors duration-300">
@@ -1360,11 +1495,11 @@ const App: React.FC = () => {
                  <p className={`text-xl md:text-2xl font-black ${view === 'inventory' && stats.itemsWithDiff > 0 ? 'text-red-600 dark:text-red-500' : 'text-slate-900 dark:text-slate-100'}`}>{view === 'inventory' ? stats.itemsWithDiff : '-'}</p>
               </div>
             </div>
-            {(view === 'supervision' || view === 'temperature') && (
+            {view === 'supervision' && (
               <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row items-center gap-4 transition-colors duration-300">
                 <div className="flex items-center gap-2">
                   <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg"><svg className="w-5 h-5 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg></div>
-                  <span className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase tracking-tight">Periode {view === 'temperature' ? 'Monitoring' : 'Supervisi'}:</span>
+                  <span className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase tracking-tight">Periode Supervisi:</span>
                 </div>
                 <div className="flex gap-2 w-full md:w-auto">
                   <select value={selectedMonth} onChange={(e) => setSelectedMonth(parseInt(e.target.value))} className="flex-1 md:w-40 px-3 py-2 text-xs font-bold border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 rounded-xl focus:ring-4 focus:ring-blue-500/10 outline-none transition-colors">{MONTHS.map((m, i) => <option key={m} value={i}>{m}</option>)}</select>
@@ -1385,8 +1520,9 @@ const App: React.FC = () => {
                     signatures={currentSignatures} 
                     onUpdateSignature={handleUpdateSignature} 
                     readOnly={isGuestMode}
+                    onSave={handleOpenSaveDraftDialog}
                   />
-                ) : view === 'supervision' ? (
+                ) : (
                   <SupervisionForm 
                     key={`${activeTab}-sup-${refreshId}`} 
                     sections={currentSupervisionSections} 
@@ -1396,18 +1532,7 @@ const App: React.FC = () => {
                     onAddCriteria={handleAddCriteria}
                     onRemoveCriteria={handleRemoveCriteria}
                     readOnly={isGuestMode}
-                  />
-                ) : (
-                  <TemperatureMonitoring
-                    key={`${activeTab}-temp-${refreshId}`}
-                    entries={currentTemperatureEntries}
-                    onUpdate={handleUpdateTemperature}
-                    selectedMonth={selectedMonth}
-                    selectedYear={selectedYear}
-                    onMonthChange={setSelectedMonth}
-                    onYearChange={setSelectedYear}
-                    activeTab={activeTab}
-                    readOnly={isGuestMode}
+                    onSave={handleOpenSaveDraftDialog}
                   />
                 )}
               </div>
@@ -1426,6 +1551,207 @@ const App: React.FC = () => {
           <p className="text-[9px] font-black text-slate-400 dark:text-slate-600 uppercase tracking-widest">© 2024 SUPERVISI PRO - DIGITAL SUPERVISION SYSTEM</p>
         </footer>
       </div>
+
+      {/* MODAL DAFTAR DRAFT */}
+      {isDraftModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-3xl shadow-2xl border border-slate-100 dark:border-slate-800 flex flex-col max-h-[85vh] overflow-hidden transition-all duration-300">
+            {/* Header */}
+            <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-900/50">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-amber-500/10 text-amber-600 dark:text-amber-400 rounded-xl">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-slate-900 dark:text-slate-100 uppercase tracking-tight">Daftar Draft Cloud</h3>
+                  <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider">Pilih draft untuk melanjutkan pengisian & tanda tangan</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setIsDraftModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-2 hover:bg-slate-100 dark:hover:bg-slate-850 rounded-xl transition-all"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* List Content */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-4">
+              {draftsList.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 text-center text-slate-400">
+                  <div className="w-16 h-16 bg-slate-50 dark:bg-slate-850 rounded-full flex items-center justify-center mb-4 border border-slate-100 dark:border-slate-800">
+                    <svg className="w-8 h-8 text-slate-300 dark:text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0a2 2 0 01-2 2H6a2 2 0 01-2-2m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-4a2 2 0 00-2 2v1a2 2 0 01-2 2H8a2 2 0 01-2-2v-1a2 2 0 00-2-2H2" />
+                    </svg>
+                  </div>
+                  <h4 className="text-xs font-black text-slate-700 dark:text-slate-300 uppercase tracking-wide">Belum Ada Draft Tersimpan</h4>
+                  <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1 max-w-sm">
+                    Simpan formulir Anda dengan mengeklik tombol "Simpan Draft" di atas untuk menyimpannya di sini.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {draftsList.map((draft) => {
+                    const isCurrentlyActive = activeDraftId === draft.id;
+                    const dateObj = new Date(draft.timestamp);
+                    const formattedDraftDate = `${dateObj.getDate()} ${MONTHS[dateObj.getMonth()]} ${dateObj.getFullYear()}, ${String(dateObj.getHours()).padStart(2, '0')}:${String(dateObj.getMinutes()).padStart(2, '0')}`;
+                    
+                    return (
+                      <div 
+                        key={draft.id}
+                        className={`p-4 bg-slate-50 hover:bg-slate-100/80 dark:bg-slate-850/20 dark:hover:bg-slate-850/50 rounded-2xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
+                          isCurrentlyActive 
+                            ? 'border-amber-500/40 bg-amber-500/5 dark:bg-amber-950/5' 
+                            : 'border-slate-200/60 dark:border-slate-800'
+                        }`}
+                      >
+                        <div className="space-y-1 min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-xs font-black text-slate-800 dark:text-slate-100 truncate">
+                              {draft.name}
+                            </span>
+                            {isCurrentlyActive && (
+                              <span className="text-[8px] font-black text-amber-700 dark:text-amber-400 uppercase bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 rounded-full tracking-wider animate-pulse">
+                                Aktif Dibuka
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-bold text-slate-400 dark:text-slate-500">
+                            <span className="bg-blue-500/10 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded-md uppercase text-[9px]">
+                              {draft.unit}
+                            </span>
+                            <span className="bg-slate-200 dark:bg-slate-850 text-slate-600 dark:text-slate-450 px-2 py-0.5 rounded-md uppercase text-[9px]">
+                              {draft.viewLabel || draft.view}
+                            </span>
+                            <span>•</span>
+                            <span>{formattedDraftDate}</span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                          <button
+                            type="button"
+                            onClick={() => handleLoadDraft(draft)}
+                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-black uppercase tracking-wider rounded-xl transition-all shadow-sm active:scale-[0.98]"
+                          >
+                            Buka Draft
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => handleDeleteDraft(draft.id, e)}
+                            className="p-2 text-red-500 hover:text-white hover:bg-red-500 dark:hover:bg-red-650 rounded-xl transition-all border border-red-200 dark:border-red-900/30"
+                            title="Hapus Draft"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-11V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="p-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 text-right">
+              <button 
+                onClick={() => setIsDraftModalOpen(false)}
+                className="px-6 py-2.5 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-black uppercase tracking-widest rounded-xl transition-all"
+              >
+                Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL SIMPAN DRAFT DIALOG */}
+      {isSaveDraftDialogOpen && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-3xl shadow-2xl border border-slate-100 dark:border-slate-800 overflow-hidden transition-all duration-300">
+            {/* Header */}
+            <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-900/50">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-xl">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-slate-900 dark:text-slate-100 uppercase tracking-tight">Simpan Draft ke Cloud</h3>
+                  <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider">Simpan status pengerjaan saat ini</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setIsSaveDraftDialogOpen(false)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-2 hover:bg-slate-100 dark:hover:bg-slate-850 rounded-xl transition-all"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Content */}
+            <form onSubmit={(e) => { e.preventDefault(); handleSaveDraft(newDraftNameInput, false); }} className="p-6 space-y-4">
+              <div className="flex flex-col gap-2">
+                <label className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">Nama Draft / Identitas Dokumen</label>
+                <input
+                  type="text"
+                  required
+                  className="w-full px-4 py-3 text-xs font-bold border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-850 text-slate-800 dark:text-slate-100 rounded-xl focus:bg-white dark:focus:bg-slate-800 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all"
+                  placeholder="Contoh: Draft Supervisi ICU Shift Pagi..."
+                  value={newDraftNameInput}
+                  onChange={(e) => setNewDraftNameInput(e.target.value)}
+                />
+                <p className="text-[10px] text-slate-400 font-medium italic">
+                  Tip: Gunakan nama unit dan tanggal atau keterangan shift agar mudah dikenali.
+                </p>
+              </div>
+
+              {activeDraftId && (
+                <div className="p-3.5 bg-blue-50/50 dark:bg-blue-950/10 border border-blue-100 dark:border-blue-900/30 rounded-2xl flex flex-col gap-2">
+                  <span className="text-[9px] font-black text-blue-800 dark:text-blue-400 uppercase tracking-wider">Opsi Pembaruan</span>
+                  <p className="text-[11px] text-slate-600 dark:text-slate-400 font-medium leading-relaxed">
+                    Anda sedang membuka draft <strong className="text-blue-900 dark:text-blue-300">"{activeDraftName}"</strong>. Anda dapat langsung menimpa draft ini atau menyimpannya sebagai draft baru.
+                  </p>
+                  <button
+                    type="button"
+                    disabled={isSavingDraft}
+                    onClick={() => handleSaveDraft(newDraftNameInput, true)}
+                    className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-black text-[10px] uppercase tracking-wider rounded-xl transition-all shadow-md mt-1"
+                  >
+                    {isSavingDraft ? "Menyimpan..." : `Perbarui Draft "${activeDraftName}"`}
+                  </button>
+                </div>
+              )}
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsSaveDraftDialogOpen(false)}
+                  className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-300 font-black text-xs uppercase tracking-wider rounded-xl transition-all"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingDraft}
+                  className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white font-black text-xs uppercase tracking-wider rounded-xl transition-all shadow-lg shadow-emerald-500/10"
+                >
+                  {isSavingDraft ? "Menyimpan..." : "Simpan Baru"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

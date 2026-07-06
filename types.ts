@@ -37,7 +37,7 @@ export interface SupervisionSection {
 }
 
 export type Department = string;
-export type AppView = 'inventory' | 'supervision' | 'temperature';
+export type AppView = 'inventory' | 'supervision';
 
 export interface TemperatureEntry {
   date: string; // ISO string YYYY-MM-DD
