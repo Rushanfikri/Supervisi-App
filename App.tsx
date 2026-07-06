@@ -8,8 +8,9 @@ import { Department, InventoryItem, AppView, SupervisionSection, SupervisionItem
 import { ICU_SHEET_URL, IBS_SHEET_URL, MONTHS, YEARS, CLOUD_SYNC_ID } from './constants';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { db } from './firebaseConfig';
+import { db, auth } from './firebaseConfig';
 import { doc, getDoc, setDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
 
 const STORAGE_KEY_ICU = 'rs_inventory_icu_data_v2';
 const STORAGE_KEY_IBS = 'rs_inventory_ibs_data_v2';
@@ -134,14 +135,35 @@ const App: React.FC = () => {
     setTheme(prev => prev === 'light' ? 'dark' : 'light');
   };
 
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user && user.email && user.email.toLowerCase().endsWith('@gmail.com')) {
+        setIsLoggedIn(true);
+        localStorage.setItem(STORAGE_KEY_AUTH, 'true');
+      } else {
+        setIsLoggedIn(false);
+        localStorage.removeItem(STORAGE_KEY_AUTH);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
   const handleLogin = () => {
     setIsLoggedIn(true);
     localStorage.setItem(STORAGE_KEY_AUTH, 'true');
   };
 
   const handleLogout = () => {
-    setIsLoggedIn(false);
-    localStorage.removeItem(STORAGE_KEY_AUTH);
+    signOut(auth)
+      .then(() => {
+        setIsLoggedIn(false);
+        localStorage.removeItem(STORAGE_KEY_AUTH);
+      })
+      .catch((err) => {
+        console.error("Gagal melakukan sign out dari Firebase Auth:", err);
+        setIsLoggedIn(false);
+        localStorage.removeItem(STORAGE_KEY_AUTH);
+      });
   };
 
   const formattedDate = useMemo(() => {
