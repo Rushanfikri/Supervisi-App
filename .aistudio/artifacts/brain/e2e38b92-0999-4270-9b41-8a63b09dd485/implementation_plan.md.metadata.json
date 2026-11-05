@@ -1,6 +1,6 @@
 {
-  "summary": "Rencana implementasi penyesuaian format export PDF supervisi farmasi RSUP Surakarta sesuai contoh dokumen acuan: tanpa logo, penambahan form Kunci Lama dan Kunci Baru, kolom tabel checklist rapi, serta tata letak 3 penandatangan dengan QR code yang hanya terbuat jika NIP diinputkan.",
-  "updatedAt": "2026-11-05T06:32:42.080905645Z",
+  "summary": "Rencana pembaruan formulir dan export PDF: menambahkan baris PERIODE pada kop dokumen di atas Ruang dan Waktu, serta menyediakan tombol opsi terpisah di aplikasi untuk memilih antara penggunaan QR Code digital atau tanda tangan manual per penandatangan dengan NIP tetap tercetak.",
+  "updatedAt": "2026-11-05T06:50:24.785560688Z",
   "requestFeedback": true,
   "userFacing": true
 }

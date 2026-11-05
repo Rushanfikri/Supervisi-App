@@ -103,32 +103,29 @@ export async function createReportPDF(options: PDFExportOptions): Promise<jsPDF>
   });
   const printTimestampStr = `${dateFormatted} ${timeStr}`;
 
-  // Helper: check if NIP is provided (non-empty)
-  const hasNip = (nip?: string): boolean => Boolean(nip && nip.trim().length > 0);
-
-  // Generate QR ONLY if NIP is provided!
+  // Generate QR ONLY if useQR is explicitly enabled!
   let supervisorQRBase64 = '';
-  if (hasNip(signatures.supervisor.nip)) {
+  if (signatures.supervisor.useQR) {
     const sName = signatures.supervisor.nama || 'Petugas Supervisi';
-    const sNip = signatures.supervisor.nip.trim();
+    const sNip = signatures.supervisor.nip ? signatures.supervisor.nip.trim() : '-';
     supervisorQRBase64 = await generateQRCodeBase64(
       `Verified Supervisi: ${sName} - NIP: ${sNip} - Dept: ${bangsal} - Periode: ${periodStr} - RSUP Surakarta`
     );
   }
 
   let kaRuangQRBase64 = '';
-  if (hasNip(signatures.kaRuang.nip)) {
+  if (signatures.kaRuang.useQR) {
     const krName = signatures.kaRuang.nama || 'Kepala Ruang';
-    const krNip = signatures.kaRuang.nip.trim();
+    const krNip = signatures.kaRuang.nip ? signatures.kaRuang.nip.trim() : '-';
     kaRuangQRBase64 = await generateQRCodeBase64(
       `Verified Supervisi: ${krName} - NIP: ${krNip} - Dept: ${bangsal} - Periode: ${periodStr} - RSUP Surakarta`
     );
   }
 
   let kaInstalasiQRBase64 = '';
-  if (hasNip(signatures.kaInstalasi.nip)) {
+  if (signatures.kaInstalasi.useQR) {
     const kiName = signatures.kaInstalasi.nama || 'Kepala Instalasi Farmasi';
-    const kiNip = signatures.kaInstalasi.nip.trim();
+    const kiNip = signatures.kaInstalasi.nip ? signatures.kaInstalasi.nip.trim() : '-';
     kaInstalasiQRBase64 = await generateQRCodeBase64(
       `Verified Supervisi: ${kiName} - NIP: ${kiNip} - Dept: ${bangsal} - Periode: ${periodStr} - RSUP Surakarta`
     );
@@ -155,24 +152,25 @@ export async function createReportPDF(options: PDFExportOptions): Promise<jsPDF>
       { align: 'center' }
     );
 
-    // 2. METADATA SECTION: RUANG, WAKTU, KUNCI LAMA, KUNCI BARU
+    // 2. METADATA SECTION: PERIODE, RUANG, WAKTU, KUNCI LAMA, KUNCI BARU
     const displayWaktu =
       waktuSupervisi ||
       `${printDate.getDate().toString().padStart(2, '0')}/${(printDate.getMonth() + 1)
         .toString()
         .padStart(2, '0')}/${printDate.getFullYear()}`;
 
-    doc.setFontSize(8.5);
+    doc.setFontSize(8);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(0, 0, 0);
 
-    // Left column
-    doc.text(`RUANG  :  ${bangsal.toUpperCase()}`, 12, 23.5);
-    doc.text(`WAKTU  :  ${displayWaktu}`, 12, 28);
+    // Left column: PERIODE on top, then RUANG, then WAKTU
+    doc.text(`PERIODE  :  ${periodStr.toUpperCase()}`, 12, 22.5);
+    doc.text(`RUANG    :  ${bangsal.toUpperCase()}`, 12, 26.5);
+    doc.text(`WAKTU    :  ${displayWaktu}`, 12, 30.5);
 
-    // Right column
-    doc.text(`KUNCI LAMA  :  ${kunciLama || ''}`, 135, 23.5);
-    doc.text(`KUNCI BARU  :  ${kunciBaru || ''}`, 135, 28);
+    // Right column: KUNCI LAMA, KUNCI BARU
+    doc.text(`KUNCI LAMA  :  ${kunciLama || ''}`, 135, 26.5);
+    doc.text(`KUNCI BARU  :  ${kunciBaru || ''}`, 135, 30.5);
 
     // 3. TABLE WITH 6 COLUMNS: Tanggal Supervisi | Uraian | Sesuai | Tidak Sesuai | Temuan | Tindak Lanjut
     // Prepare flattened list of items for vector checkbox rendering in didDrawCell
@@ -213,8 +211,8 @@ export async function createReportPDF(options: PDFExportOptions): Promise<jsPDF>
     });
 
     autoTable(doc, {
-      startY: 30.5,
-      margin: { top: 30.5, bottom: 12, left: 12, right: 12 },
+      startY: 33,
+      margin: { top: 33, bottom: 12, left: 12, right: 12 },
       head: [
         [
           'Tanggal\nSupervisi',
@@ -311,9 +309,9 @@ export async function createReportPDF(options: PDFExportOptions): Promise<jsPDF>
     doc.text('Petugas Supervisi', colRightX, sigRow1Y, { align: 'center' });
 
     // --- Left: Kepala Ruang ---
-    const hasKrNip = hasNip(signatures.kaRuang.nip);
-    let krNameY = sigRow1Y + 19;
-    if (hasKrNip && kaRuangQRBase64) {
+    const useKrQR = Boolean(signatures.kaRuang.useQR && kaRuangQRBase64);
+    let krNameY = sigRow1Y + 18;
+    if (useKrQR) {
       doc.addImage(kaRuangQRBase64, 'PNG', colLeftX - 7.5, sigRow1Y + 2, 15, 15);
       krNameY = sigRow1Y + 19.5;
     }
@@ -325,16 +323,16 @@ export async function createReportPDF(options: PDFExportOptions): Promise<jsPDF>
       krNameY,
       { align: 'center' }
     );
-    if (hasKrNip) {
+    if (signatures.kaRuang.nip && signatures.kaRuang.nip.trim().length > 0) {
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(7.5);
       doc.text(signatures.kaRuang.nip.trim(), colLeftX, krNameY + 4, { align: 'center' });
     }
 
     // --- Right: Petugas Supervisi ---
-    const hasSpNip = hasNip(signatures.supervisor.nip);
-    let spNameY = sigRow1Y + 19;
-    if (hasSpNip && supervisorQRBase64) {
+    const useSpQR = Boolean(signatures.supervisor.useQR && supervisorQRBase64);
+    let spNameY = sigRow1Y + 18;
+    if (useSpQR) {
       doc.addImage(supervisorQRBase64, 'PNG', colRightX - 7.5, sigRow1Y + 2, 15, 15);
       spNameY = sigRow1Y + 19.5;
     }
@@ -348,7 +346,7 @@ export async function createReportPDF(options: PDFExportOptions): Promise<jsPDF>
       spNameY,
       { align: 'center' }
     );
-    if (hasSpNip) {
+    if (signatures.supervisor.nip && signatures.supervisor.nip.trim().length > 0) {
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(7.5);
       doc.text(signatures.supervisor.nip.trim(), colRightX, spNameY + 4, { align: 'center' });
@@ -363,9 +361,9 @@ export async function createReportPDF(options: PDFExportOptions): Promise<jsPDF>
     doc.text('Mengetahui,', colCenterX, sigRow2Y, { align: 'center' });
     doc.text('Kepala Instalasi Farmasi', colCenterX, sigRow2Y + 4, { align: 'center' });
 
-    const hasKiNip = hasNip(signatures.kaInstalasi.nip);
-    let kiNameY = sigRow2Y + 23;
-    if (hasKiNip && kaInstalasiQRBase64) {
+    const useKiQR = Boolean(signatures.kaInstalasi.useQR && kaInstalasiQRBase64);
+    let kiNameY = sigRow2Y + 22;
+    if (useKiQR) {
       doc.addImage(kaInstalasiQRBase64, 'PNG', colCenterX - 7.5, sigRow2Y + 6, 15, 15);
       kiNameY = sigRow2Y + 23.5;
     }
@@ -379,7 +377,7 @@ export async function createReportPDF(options: PDFExportOptions): Promise<jsPDF>
       kiNameY,
       { align: 'center' }
     );
-    if (hasKiNip) {
+    if (signatures.kaInstalasi.nip && signatures.kaInstalasi.nip.trim().length > 0) {
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(7.5);
       doc.text(signatures.kaInstalasi.nip.trim(), colCenterX, kiNameY + 4, { align: 'center' });
@@ -527,15 +525,15 @@ export async function createReportPDF(options: PDFExportOptions): Promise<jsPDF>
     doc.setTextColor(30, 41, 59);
     doc.text('Supervisor Unit / Petugas Farmasi', 14, sigY);
 
-    const hasSupInvNip = hasNip(signatures.supervisor.nip);
-    if (hasSupInvNip && supervisorQRBase64) {
+    const useSupInvQR = Boolean(signatures.supervisor.useQR && supervisorQRBase64);
+    if (useSupInvQR) {
       doc.addImage(supervisorQRBase64, 'PNG', 14, sigY + 2, 21, 21);
     }
 
-    const textX = hasSupInvNip ? 38 : 14;
-    const textStartY = hasSupInvNip ? sigY + 7 : sigY + 14;
+    const textX = useSupInvQR ? 38 : 14;
+    const textStartY = useSupInvQR ? sigY + 7 : sigY + 14;
 
-    if (hasSupInvNip) {
+    if (useSupInvQR) {
       doc.setFontSize(6.8);
       doc.setFont('helvetica', 'italic');
       doc.setTextColor(100, 116, 139);
@@ -548,14 +546,14 @@ export async function createReportPDF(options: PDFExportOptions): Promise<jsPDF>
     doc.text(
       signatures.supervisor.nama || 'Muhammad Iqbal Rushanfikri',
       textX,
-      hasSupInvNip ? sigY + 13 : textStartY
+      useSupInvQR ? sigY + 13 : textStartY
     );
 
-    if (hasSupInvNip) {
+    if (signatures.supervisor.nip && signatures.supervisor.nip.trim().length > 0) {
       doc.setFontSize(7.5);
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(51, 65, 85);
-      doc.text(`NIP: ${signatures.supervisor.nip.trim()}`, textX, sigY + 18);
+      doc.text(`NIP: ${signatures.supervisor.nip.trim()}`, textX, useSupInvQR ? sigY + 18 : textStartY + 5);
     }
 
     // Stats box on right

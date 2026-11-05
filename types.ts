@@ -15,6 +15,7 @@ export interface Signatory {
   nama: string;
   nip: string;
   timestamp?: string;
+  useQR?: boolean;
 }
 
 export interface SupervisionSignatures {

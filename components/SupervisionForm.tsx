@@ -8,9 +8,10 @@ interface SupervisionFormProps {
   kunciBaru?: string;
   waktuSupervisi?: string;
   bangsalName?: string;
+  periodeStr?: string;
   onUpdateMetadata?: (field: 'kunciLama' | 'kunciBaru' | 'waktuSupervisi', value: string) => void;
   onUpdateItem: (sectionIndex: number, itemIndex: number, field: keyof SupervisionItem, value: any) => void;
-  onUpdateSignature: (role: keyof SupervisionSignatures, field: 'nama' | 'nip', value: string) => void;
+  onUpdateSignature: (role: keyof SupervisionSignatures, field: 'nama' | 'nip' | 'useQR', value: any) => void;
   onAddCriteria: (sectionIndex: number) => void;
   onRemoveCriteria: (sectionIndex: number, itemIndex: number) => void;
   readOnly?: boolean;
@@ -24,6 +25,7 @@ const SupervisionForm: React.FC<SupervisionFormProps> = ({
   kunciBaru = '',
   waktuSupervisi = '',
   bangsalName = '',
+  periodeStr = '',
   onUpdateMetadata,
   onUpdateItem, 
   onUpdateSignature, 
@@ -52,10 +54,9 @@ const SupervisionForm: React.FC<SupervisionFormProps> = ({
 
   const renderSignatureBox = (role: keyof SupervisionSignatures, label: string) => {
     const sig = signatures[role];
-    // ONLY generate QR if NIP is entered (not empty)
-    const hasNip = Boolean(sig.nip && sig.nip.trim().length > 0);
+    const isUsingQR = Boolean(sig.useQR);
     const sName = sig.nama || 'Petugas';
-    const sNip = sig.nip ? sig.nip.trim() : '';
+    const sNip = sig.nip ? sig.nip.trim() : '-';
     const qrData = encodeURIComponent(`Verified Supervisi: ${sName} - NIP: ${sNip} - Time: ${sig.timestamp || "N/A"} - RSUP Surakarta`);
     const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${qrData}`;
 
@@ -85,28 +86,49 @@ const SupervisionForm: React.FC<SupervisionFormProps> = ({
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <div className="flex items-center justify-between">
-            <label className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase">Nomor NIP</label>
-            <span className="text-[8px] text-slate-400 dark:text-slate-500 italic">
-              {hasNip ? 'QR aktif' : 'Isi NIP untuk QR'}
-            </span>
-          </div>
+          <label className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase">Nomor NIP Pegawai</label>
           <input
             type="text"
             disabled={readOnly}
             className="w-full px-3 py-2 text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-700 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all disabled:opacity-50"
-            placeholder="Nomor NIP Pegawai (opsional)..."
+            placeholder="Nomor NIP (tetap dicetak di PDF)..."
             value={sig.nip}
             onChange={(e) => onUpdateSignature(role, 'nip', e.target.value)}
           />
         </div>
 
+        {/* Dedicated QR Toggle Switch */}
+        <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+          <div className="flex flex-col">
+            <span className="text-[10px] font-bold text-slate-700 dark:text-slate-300">Gunakan QR Code</span>
+            <span className="text-[8px] text-slate-400 dark:text-slate-500">
+              {isUsingQR ? 'QR aktif dicetak di atas nama' : 'Tanda tangan manual di atas nama'}
+            </span>
+          </div>
+          <button
+            type="button"
+            disabled={readOnly}
+            onClick={() => onUpdateSignature(role, 'useQR', !isUsingQR)}
+            className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+              isUsingQR ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-700'
+            } disabled:opacity-50`}
+            title={isUsingQR ? "Matikan QR Code" : "Aktifkan QR Code"}
+          >
+            <span
+              className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                isUsingQR ? 'translate-x-4' : 'translate-x-0'
+              }`}
+            />
+          </button>
+        </div>
+
+        {/* Visualizer Box */}
         <div className="flex flex-col items-center justify-center py-3 border-t border-slate-100 dark:border-slate-800 mt-2 gap-2">
           <p className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-tighter">
-            {hasNip ? 'QR VERIFICATION' : 'TANDA TANGAN MANUAL'}
+            {isUsingQR ? 'QR VERIFICATION' : 'TANDA TANGAN MANUAL'}
           </p>
           <div className="w-24 h-24 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center justify-center overflow-hidden transition-all duration-300">
-            {hasNip ? (
+            {isUsingQR ? (
               <img src={qrUrl} alt="Signature QR" className="w-full h-full p-1 dark:invert-[0.05]" />
             ) : (
               <div className="flex flex-col items-center justify-center p-2 text-center text-slate-400 dark:text-slate-500">
@@ -117,13 +139,13 @@ const SupervisionForm: React.FC<SupervisionFormProps> = ({
               </div>
             )}
           </div>
-          {hasNip ? (
+          {isUsingQR ? (
             <span className="text-[8px] font-black text-emerald-600 dark:text-emerald-400 uppercase bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800/40">
               Digital Verified
             </span>
           ) : (
             <span className="text-[8px] text-slate-400 dark:text-slate-500 italic text-center">
-              Tanpa QR (ttd basah di PDF)
+              Ttd basah (NIP tetap dicetak)
             </span>
           )}
         </div>
@@ -133,20 +155,27 @@ const SupervisionForm: React.FC<SupervisionFormProps> = ({
 
   return (
     <div className="flex flex-col w-full gap-6">
-      {/* Header Info Panel: RUANG, WAKTU, KUNCI LAMA, KUNCI BARU */}
+      {/* Header Info Panel: PERIODE, RUANG, WAKTU, KUNCI LAMA, KUNCI BARU */}
       <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm transition-colors duration-300">
-        <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-100 dark:border-slate-800">
+        <div className="flex flex-wrap items-center justify-between pb-3 mb-3 border-b border-slate-100 dark:border-slate-800 gap-2">
           <div>
             <h3 className="text-xs font-black text-slate-900 dark:text-slate-100 uppercase tracking-tight">
               Informasi Supervisi Farmasi
             </h3>
             <p className="text-[10px] text-slate-500 dark:text-slate-400">
-              Dicetak pada header resmi PDF: Ruang, Waktu, Kunci Lama, dan Kunci Baru troli
+              Dicetak pada kop resmi PDF: Periode, Ruang, Waktu, Kunci Lama, dan Kunci Baru
             </p>
           </div>
-          <span className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200/50 dark:border-blue-800/50">
-            {bangsalName || 'Ruang Perawatan'}
-          </span>
+          <div className="flex items-center gap-2">
+            {periodeStr && (
+              <span className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider rounded-lg bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200/50 dark:border-emerald-800/50">
+                PERIODE: {periodeStr}
+              </span>
+            )}
+            <span className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200/50 dark:border-blue-800/50">
+              RUANG: {bangsalName || 'Ruang Perawatan'}
+            </span>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">

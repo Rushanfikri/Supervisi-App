@@ -74,11 +74,12 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
 const INITIAL_SIGNATURES: SupervisionSignatures = {
   supervisor: { 
     nama: 'Muhammad Iqbal Rushanfikri, S.Farm, Apt', 
-    nip: '', 
+    nip: '199807132022031001', 
+    useQR: false,
     timestamp: '' 
   },
-  kaRuang: { nama: 'Putriani Kartika', nip: '', timestamp: '' },
-  kaInstalasi: { nama: 'Fella Syifa, S.Farm, Apt', nip: '', timestamp: '' }
+  kaRuang: { nama: 'Putriani Kartika', nip: '198004142008122001', useQR: false, timestamp: '' },
+  kaInstalasi: { nama: 'Fella Syifa, S.Farm, Apt', nip: '199504182020122008', useQR: false, timestamp: '' }
 };
 
 const INITIAL_SUPERVISION_SECTIONS: SupervisionSection[] = [
@@ -844,7 +845,7 @@ const App: React.FC = () => {
     isInternalChange.current = false;
   }, [activeTab]);
 
-  const handleUpdateSignature = useCallback((role: keyof SupervisionSignatures, field: 'nama' | 'nip', value: string) => {
+  const handleUpdateSignature = useCallback((role: keyof SupervisionSignatures, field: 'nama' | 'nip' | 'useQR', value: any) => {
     const updateFn = (prev: SupervisionSignatures) => {
       const ts = new Date().toLocaleString('id-ID', { 
         day: '2-digit', 
@@ -1581,6 +1582,7 @@ const App: React.FC = () => {
                     kunciBaru={kunciBaru}
                     waktuSupervisi={waktuSupervisi}
                     bangsalName={activeTab}
+                    periodeStr={`${MONTHS[selectedMonth]} ${selectedYear}`}
                     onUpdateMetadata={handleUpdateMetadata}
                     onUpdateItem={handleUpdateSupervision} 
                     onUpdateSignature={handleUpdateSignature} 

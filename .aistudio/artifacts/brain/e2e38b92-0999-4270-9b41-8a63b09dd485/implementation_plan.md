@@ -1,94 +1,81 @@
-# Format Export PDF Supervisi Farmasi RSUP Surakarta & Validasi Tanda Tangan
+# Penambahan Tombol Opsi QR Tanda Tangan & Baris Periode pada Kop PDF
 
-Penyesuaian menyeluruh terhadap tampilan export dan pratinjau PDF formulir supervisi farmasi agar persis menyerupai format resmi standar dokumen RSUP Surakarta: tanpa logo, integrasi nomor segel troli (Kunci Lama & Kunci Baru), checklist tabel vector, serta fleksibilitas tanda tangan manual dan digital QR berbasis nomor NIP.
+Rencana implementasi perubahan kendali tanda tangan dan penambahan informasi Periode pada formulir supervisi dan dokumen export PDF RSUP Surakarta.
 
 ---
 
 ## User Review & Critical Decisions
 
 > [!IMPORTANT]
-> Ringkasan keputusan berdasarkan jawaban klarifikasi pengguna:
-> - **Cakupan Dokumen**: Perubahan tampilan difokuskan khusus pada **Laporan Supervisi Farmasi** (Supervision View) agar persis menyerupai contoh dokumen `SUPERVISI_ICU_2025_-_Google_Spreadsheet_31e7a978.pdf`.
-> - **Aturan QR & Tanda Tangan**: Nama penandatangan dapat diisi bebas. **QR code TIDAK dibuat secara otomatis**. QR code **HANYA** dibuat dan dicetak jika NIP pegawai diisi. Jika NIP kosong, ruang di atas nama dibiarkan kosong untuk tanda tangan manual / tanda tangan basah.
-> - **Kunci Troli Emergensi**: Disediakan form isian **Kunci Lama** dan **Kunci Baru** pada formulir supervisi di aplikasi, dan dicetak di bagian kanan atas kop dokumen PDF.
-> - **Tanpa Logo**: Header bersih dari logo Kemenkes/RSUP sesuai instruksi pengguna.
+> Ringkasan penyesuaian baru:
+> - **Kop Dokumen PDF**: Di atas baris `RUANG` dan `WAKTU`, ditambahkan baris teks tebal: `PERIODE : [BULAN TAHUN]` (contoh: `PERIODE : AGUSTUS 2026`) yang nilainya otomatis tersinkronisasi dengan periode bulan dan tahun yang dipilih di aplikasi.
+> - **Opsi Tombol QR Terpisah**:
+>   - Nomor NIP tetap dapat diisi kapan saja oleh pengguna.
+>   - Disediakan tombol saklar/toggle terpisah di setiap kartu penandatangan di aplikasi: **"Gunakan QR Digital"** vs **"Tanda Tangan Manual"**.
+>   - Jika tombol QR **aktif**: Sistem men-generate QR verification dan mencetaknya di atas nama lengkap, disertai NIP di bawah nama.
+>   - Jika tombol QR **nonaktif**: Dokumen mencetak area kosong tanda tangan basah di atas nama, nama lengkap tetap dicetak tebal, dan nomor NIP yang telah diisi tetap dicetak rapi di bawah nama.
 
 ---
 
 ## 1. Overview & Core Concept
 
-Implementasi ini menghadirkan standarisasi dokumen supervisi farmasi rawat inap RSUP Surakarta dengan rincian:
-1. **Kop Dokumen Resmi**:
-   - Judul tengah:
+1. **Tata Letak Kop PDF Terbaru**:
+   - Judul Tengah:
      ```
      SUPERVISI INSTALASI FARMASI DALAM PELAYANAN KEFARMASIAN
      DI RUANG RAWAT INAP RUMAH SAKIT UMUM PUSAT SURAKARTA
      ```
-   - Baris metadata:
-     - Sisi Kiri: `RUANG : [Nama Ruang]` dan `WAKTU : [Tanggal/Bulan/Tahun]`
-     - Sisi Kanan: `KUNCI LAMA : [Nomor Segel]` dan `KUNCI BARU : [Nomor Segel]`
-   - Tanpa logo di sudut manapun.
+   - Baris Metadata:
+     - Sisi Kiri:
+       ```
+       PERIODE : AGUSTUS 2026
+       RUANG   : NAKULA
+       WAKTU   : 12/08/2026
+       ```
+     - Sisi Kanan:
+       ```
+       KUNCI LAMA : B-4019
+       KUNCI BARU : B-4020
+       ```
+     - Tanpa logo di sudut mana pun.
 
-2. **Struktur Tabel Evaluasi**:
-   - Kolom:
-     1. `Tanggal Supervisi` (lebar ~22mm)
-     2. `Uraian` (lebar ~76mm)
-     3. `Sesuai` (lebar ~14mm, dengan kotak checkbox vector)
-     4. `Tidak Sesuai` (lebar ~14mm, dengan kotak checkbox vector)
-     5. `Temuan` (lebar ~30mm)
-     6. `Tindak Lanjut` (lebar ~30mm)
-   - Judul seksi (A. PENYIMPANAN OBAT/ BMHP DI RUANG PERAWATAN, B. LEMBAR MONITORING, C. TROLI EMERGENSI, D. HIGH ALERT & LASA, E. PENYIMPANAN B3) merentang selebar tabel (*full colSpan*) dengan huruf tebal berbingkai rapi.
-
-3. **Tata Letak Lembar Pengesahan (3 Penandatangan)**:
-   - **Baris Atas**:
-     - Kiri: **Kepala Ruang**
-     - Kanan: **Petugas Supervisi**
-   - **Baris Bawah (Tengah)**:
-     - **Mengetahui,**
-     - **Kepala Instalasi Farmasi**
-   - **Logika Tanda Tangan**:
-     - *Jika NIP terisi*: QR Code verifikasi digenerate dan diletakkan di antara jabatan dan nama, lalu NIP dicetak di bawah nama tebal.
-     - *Jika NIP kosong*: Tidak ada QR Code yang digenerate (area dibiarkan lapang untuk tanda tangan basah/manual), nama dicetak di bawahnya, dan baris NIP tidak ditampilkan.
+2. **Mekanisme Opsi QR & Tanda Tangan Mandiri**:
+   - Model data `Signatory` / `SupervisionSignatures` diperkaya dengan flag boolean:
+     - `useQR?: boolean` (default: false untuk tanda tangan manual atau true jika diaktifkan pengguna).
+   - Di formulir web (`SupervisionForm.tsx`), setiap kartu penandatangan memiliki tombol toggle interaktif yang jelas:
+     - Status Aktif: Menampilkan preview QR Code dan status *"Digital QR Verification Aktif"*.
+     - Status Nonaktif: Menampilkan status *"Mode Tanda Tangan Manual/Basah"* dengan instruksi *"NIP tetap dicetak di bawah nama"*.
+   - Di PDF (`pdfGenerator.ts`):
+     - Membaca flag `useQR`. Jika `true`, QR dicetak di atas nama. Jika `false`, disediakan ruang kosong tanda tangan basah di atas nama.
+     - Nama dicetak tebal.
+     - Jika NIP terisi, NIP selalu dicetak di bawah nama baik pada mode QR maupun mode manual.
 
 ---
 
 ## 2. User Experience & Visual Design
 
-### A. Formulir Web Supervisi (`SupervisionForm.tsx`)
-- **Metadata Bar Tambahan**: Di bagian atas formulir supervisi, ditambahkan kartu isian praktis:
-  - Input `Kunci Lama` (placeholder: "Nomor segel lama...")
-  - Input `Kunci Baru` (placeholder: "Nomor segel baru...")
-  - Input `Waktu Supervisi` (tanggal pelaksanaan, default ke tanggal hari ini)
-- **Kartu Tanda Tangan Modern**:
-  - Input Nama Lengkap (bebas diketik kapan saja).
-  - Input Nomor NIP (dengan keterangan jelas: *"Isi NIP untuk mengaktifkan QR Verification; kosongkan untuk tanda tangan manual"*).
-  - Tampilan visual responsif: Jika NIP terisi, kotak QR menampilkan kode QR verifikasi dengan status *"Digital Verified"*. Jika NIP kosong, kotak menampilkan siluet pena tanda tangan dengan keterangan *"Tanda Tangan Manual"*.
+### A. Tampilan Kartu Tanda Tangan di Aplikasi
+- Setiap kotak penandatangan (*Supervisor Unit*, *Kepala Ruang*, *Kepala Instalasi Farmasi*) dilengkapi dengan:
+  - Input **Nama Lengkap**.
+  - Input **Nomor NIP**.
+  - Tombol Toggle Opsi:
+    - `[ Toggle Switch ] Gunakan QR Digital`
+  - Area Visualizer Responsif:
+    - Mode QR Aktif: Menampilkan QR code dengan bingkai verifikasi digital.
+    - Mode Manual: Menampilkan ikon pena dan area tanda tangan basah, memastikan pengguna yakin bahwa NIP tetap tersimpan dan tercetak di PDF.
 
-### B. Pratinjau & Ekspor PDF (`PdfPreviewModal.tsx` & `pdfGenerator.ts`)
-- Ketika tombol **Cetak PDF** atau **Download PDF** ditekan pada mode Supervisi, modal langsung merender dokumen format A4 portrait yang presisi sesuai acuan.
-- Tabel checklist digambar dengan vector sharp paths (`doc.rect` dan `doc.lines`) sehingga hasil cetak tetap tajam di semua jenis printer dan PDF reader.
-
----
-
-## 3. Key Product Decisions & Trade-Offs
-
-1. **Vector Drawing untuk Checkbox**:
-   - *Pendekatan*: Menggunakan fungsi `didDrawCell` pada `jspdf-autotable` untuk menggambar kotak persegi 3.5mm x 3.5mm dan tanda centang (checkmark) vector.
-   - *Alasan*: Karakter Unicode seperti `☑` atau `☐` sering kali mengalami distorsi font atau hilang (*missing glyph*) pada beberapa versi library PDF standar Helvetica. Vector drawing 100% konsisten di semua platform.
-2. **Kondisional Penuh untuk QR Code**:
-   - *Pendekatan*: Pemeriksaan ketat `const hasNip = Boolean(sig.nip && sig.nip.trim().length > 0)`.
-   - *Alasan*: Menjamin sistem tidak pernah membuat QR secara sembarangan jika petugas ruangan belum memasukkan NIP.
-3. **Penyimpanan State Kunci Troli**:
-   - *Pendekatan*: Menambahkan field `kunciLama`, `kunciBaru`, dan `waktuSupervisi` pada state supervisi di `App.tsx` serta sinkronisasi otomatis ke Firestore/LocalStorage agar data tidak hilang saat beralih tab atau me-refresh halaman.
+### B. Pratinjau Modal PDF (`PdfPreviewModal.tsx`)
+- Secara instan memperbarui tampilan IFrame PDF setiap kali tombol QR diubah, nama diedit, NIP diisi, atau periode bulan/tahun diganti.
 
 ---
 
-## 4. Technical Architecture & Data Strategy
+## 3. Technical Architecture & Data Strategy
 
 ```
 ┌────────────────────────────────────────────────────────┐
 │                        App.tsx                         │
-│  - supervisionSections, signatures                    │
+│  - selectedMonth, selectedYear                        │
+│  - signatures (nama, nip, useQR)                      │
 │  - kunciLama, kunciBaru, waktuSupervisi               │
 └───────────────────────────┬────────────────────────────┘
                             │
@@ -96,25 +83,27 @@ Implementasi ini menghadirkan standarisasi dokumen supervisi farmasi rawat inap 
               ▼                           ▼
 ┌───────────────────────────┐ ┌───────────────────────────┐
 │   SupervisionForm.tsx     │ │   PdfPreviewModal.tsx     │
-│  - Input Kunci Lama/Baru  │ │  - IFrame Live Preview    │
-│  - Input Nama & NIP       │ │  - Download & Print Handlers
-│  - Dynamic QR vs Manual   │ └─────────────┬─────────────┘
+│  - Input Periode Info     │ │  - Realtime IFrame Render │
+│  - Toggle "Gunakan QR"    │ │  - Sync selectedMonth/Year│
+│  - Input Nama & NIP       │ └─────────────┬─────────────┘
 └───────────────────────────┘               │
                                             ▼
                               ┌───────────────────────────┐
                               │     pdfGenerator.ts       │
-                              │  - Header resmi RSUP      │
-                              │  - Vector Table Checkbox  │
-                              │  - 3-Way Dynamic Signatures
+                              │  - Kop: PERIODE, RUANG,   │
+                              │    WAKTU, KUNCI LAMA/BARU │
+                              │  - QR dicetak jika useQR  │
+                              │  - NIP & Nama tetap cetak │
                               └───────────────────────────┘
 ```
 
 ### Rencana File yang Dimodifikasi:
-1. `types.ts`: Menambahkan tipe untuk metadata supervisi (`kunciLama`, `kunciBaru`, `waktuSupervisi`).
-2. `utils/pdfGenerator.ts`: Menulis ulang generator PDF mode `supervision` agar identik dengan contoh dokumen lampiran:
-   - Header teks center tanpa logo
-   - Metadata `RUANG`, `WAKTU`, `KUNCI LAMA`, `KUNCI BARU`
-   - Tabel 6 kolom dengan checkbox vector
-   - Tata letak 3 tanda tangan (Kepala Ruang kiri, Petugas Supervisi kanan, Kepala Instalasi Farmasi tengah bawah) dengan aturan QR hanya aktif jika NIP diinputkan.
-3. `components/SupervisionForm.tsx`: Menambahkan input field untuk Kunci Lama & Kunci Baru, serta mengupdate kartu tanda tangan agar menjelaskan status tanda tangan manual vs digital QR.
-4. `App.tsx`: Mengelola state `kunciLama`, `kunciBaru`, dan meneruskannya ke form serta modal PDF.
+1. `types.ts`: Menambahkan properti `useQR?: boolean` pada `Signatory`.
+2. `utils/pdfGenerator.ts`:
+   - Menambahkan baris `PERIODE : ${periodStr.toUpperCase()}` di atas `RUANG` dan `WAKTU` pada kop surat PDF mode supervisi.
+   - Mengubah logika cetak QR: QR code hanya di-generate dan dicetak jika `sig.useQR === true`. Jika `false`, sediakan ruang tanda tangan manual di atas nama, dan tetap cetak NIP (jika ada) di bawah nama.
+3. `components/SupervisionForm.tsx`:
+   - Menambahkan tombol toggle/switch `"Gunakan QR Digital"` pada setiap penandatangan.
+   - Menampilkan label Periode aktif pada panel info supervisi.
+4. `App.tsx`:
+   - Menyediakan handler untuk mengubah status `useQR` pada signatures dan meneruskan period month/year ke PDF generator.
