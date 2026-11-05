@@ -1,5 +1,8 @@
 {
-  "name": "Copy of RS Inventory Pro",
-  "description": "A responsive inventory tracking system for hospital ICU and IBS units, featuring automated discrepancy calculations and expiry date tracking.",
-  "requestFramePermissions": []
+  "name": "RSUP Surakarta - Trolley Emergency",
+  "description": "Sistem Informasi Manajemen Obat Trolley Emergency & Supervisi Ruang Perawatan RSUP Surakarta dengan export PDF dan Lembar Pengesahan.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

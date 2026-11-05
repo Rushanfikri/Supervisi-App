@@ -23,6 +23,12 @@ export interface SupervisionSignatures {
   kaInstalasi: Signatory;
 }
 
+export interface SupervisionMetadata {
+  kunciLama: string;
+  kunciBaru: string;
+  waktuSupervisi: string;
+}
+
 export interface SupervisionItem {
   id: string;
   uraian: string;

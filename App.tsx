@@ -5,8 +5,8 @@ import SupervisionForm from './components/SupervisionForm';
 import Login from './components/Login';
 import { Department, InventoryItem, AppView, SupervisionSection, SupervisionItem, SupervisionSignatures } from './types';
 import { ICU_SHEET_URL, IBS_SHEET_URL, MONTHS, YEARS, CLOUD_SYNC_ID } from './constants';
-import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
+import { createReportPDF } from './utils/pdfGenerator';
+import { PdfPreviewModal } from './components/PdfPreviewModal';
 import { db, auth } from './firebaseConfig';
 import { doc, getDoc, setDoc, deleteDoc, onSnapshot, collection, addDoc, getDocs } from 'firebase/firestore';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
@@ -72,9 +72,13 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
 }
 
 const INITIAL_SIGNATURES: SupervisionSignatures = {
-  supervisor: { nama: '', nip: '', timestamp: '' },
-  kaRuang: { nama: '', nip: '', timestamp: '' },
-  kaInstalasi: { nama: '', nip: '', timestamp: '' }
+  supervisor: { 
+    nama: 'Muhammad Iqbal Rushanfikri, S.Farm, Apt', 
+    nip: '', 
+    timestamp: '' 
+  },
+  kaRuang: { nama: 'Putriani Kartika', nip: '', timestamp: '' },
+  kaInstalasi: { nama: 'Fella Syifa, S.Farm, Apt', nip: '', timestamp: '' }
 };
 
 const INITIAL_SUPERVISION_SECTIONS: SupervisionSection[] = [
@@ -135,7 +139,8 @@ const App: React.FC = () => {
     return localStorage.getItem(STORAGE_KEY_AUTH) === 'true';
   });
   const [isGuestMode, setIsGuestMode] = useState<boolean>(false);
-  const [activeTab, setActiveTab] = useState<Department>('ICU');
+  const [activeTab, setActiveTab] = useState<Department>('SEMBADRA');
+  const [isPdfModalOpen, setIsPdfModalOpen] = useState<boolean>(false);
   const [guestSearchTerm, setGuestSearchTerm] = useState("");
   const [view, setView] = useState<AppView>('inventory');
   const [refreshId, setRefreshId] = useState(0);
@@ -174,6 +179,34 @@ const App: React.FC = () => {
   const [isSaveDraftDialogOpen, setIsSaveDraftDialogOpen] = useState(false);
   const [newDraftNameInput, setNewDraftNameInput] = useState("");
   const [isSavingDraft, setIsSavingDraft] = useState(false);
+
+  // Supervision metadata states (Kunci Lama, Kunci Baru, Waktu Supervisi)
+  const [kunciLama, setKunciLama] = useState<string>(() => {
+    return localStorage.getItem('rs_kunci_lama') || '';
+  });
+  const [kunciBaru, setKunciBaru] = useState<string>(() => {
+    return localStorage.getItem('rs_kunci_baru') || '';
+  });
+  const [waktuSupervisi, setWaktuSupervisi] = useState<string>(() => {
+    const today = new Date();
+    const d = today.getDate().toString().padStart(2, '0');
+    const m = (today.getMonth() + 1).toString().padStart(2, '0');
+    const y = today.getFullYear();
+    return localStorage.getItem('rs_waktu_supervisi') || `${d}/${m}/${y}`;
+  });
+
+  const handleUpdateMetadata = useCallback((field: 'kunciLama' | 'kunciBaru' | 'waktuSupervisi', value: string) => {
+    if (field === 'kunciLama') {
+      setKunciLama(value);
+      localStorage.setItem('rs_kunci_lama', value);
+    } else if (field === 'kunciBaru') {
+      setKunciBaru(value);
+      localStorage.setItem('rs_kunci_baru', value);
+    } else if (field === 'waktuSupervisi') {
+      setWaktuSupervisi(value);
+      localStorage.setItem('rs_waktu_supervisi', value);
+    }
+  }, []);
 
   useEffect(() => {
     if (theme === 'dark') {
@@ -264,7 +297,11 @@ const App: React.FC = () => {
 
   const [customUnits, setCustomUnits] = useState<string[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEY_CUSTOM_UNITS);
-    return saved ? JSON.parse(saved) : [];
+    const parsed: string[] = saved ? JSON.parse(saved) : [];
+    if (!parsed.includes('SEMBADRA')) {
+      parsed.push('SEMBADRA');
+    }
+    return parsed;
   });
 
   const [customData, setCustomData] = useState<Record<string, InventoryItem[]>>(() => {
@@ -932,116 +969,32 @@ const App: React.FC = () => {
     return 'normal';
   };
 
-  const fetchImageAsBase64 = async (url: string): Promise<string | null> => {
-    try {
-      const response = await fetch(url);
-      const blob = await response.blob();
-      return new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result as string);
-        reader.readAsDataURL(blob);
-      });
-    } catch (e) {
-      console.error("Failed to fetch image", e);
-      return null;
-    }
-  };
-
   const handleExportPDF = useCallback(async () => {
     setIsLoading(true);
-    const doc = new jsPDF();
-    const title = view === 'supervision' ? `Laporan Supervisi - Unit ${activeTab}` : `Laporan Trolley Emergency - Unit ${activeTab}`;
-    const timeStr = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).replace(/\./g, ':');
-    const dateStr = `${formattedDate} ${timeStr}`;
-    const periodStr = `${MONTHS[selectedMonth]} ${selectedYear}`;
-
-    doc.setFontSize(16);
-    doc.text(title, 14, 15);
-    doc.setFontSize(10);
-    doc.text(`Dicetak pada: ${dateStr}`, 14, 22);
-    if (view === 'supervision') {
-      doc.setFontSize(11);
-      doc.text(`Periode: ${periodStr}`, 14, 28);
+    try {
+      const doc = await createReportPDF({
+        view,
+        bangsal: activeTab,
+        month: selectedMonth,
+        year: selectedYear,
+        items: currentInventoryItems,
+        supervisionSections: currentSupervisionSections,
+        signatures: currentSignatures,
+        printDate: now,
+        kunciLama,
+        kunciBaru,
+        waktuSupervisi,
+      });
+      const prefix = view === 'inventory' ? 'Daftar_Obat_Trolley' : 'Laporan_Supervisi';
+      const monthName = MONTHS[selectedMonth];
+      doc.save(`${prefix}_RSUP_Surakarta_${activeTab}_${monthName}_${selectedYear}.pdf`);
+    } catch (err) {
+      console.error("Gagal mengekspor PDF:", err);
+      alert("Terjadi kesalahan saat membuat PDF.");
+    } finally {
+      setIsLoading(false);
     }
-
-    if (view === 'inventory') {
-      const tableRows = currentInventoryItems.map(item => [
-        item.no, item.namaItem, item.sistem, item.fisik === "" ? "-" : item.fisik,
-        typeof item.selisih === 'number' ? (item.selisih > 0 ? `+${item.selisih}` : item.selisih) : "-",
-        item.ed_dd && item.ed_mm && item.ed_yy ? `${item.ed_dd}/${item.ed_mm}/${item.ed_yy}` : "-"
-      ]);
-      autoTable(doc, {
-        startY: 30,
-        head: [['NO', 'NAMA ITEM', 'SISTEM', 'FISIK', 'SELISIH', 'EXPIRED']],
-        body: tableRows,
-        theme: 'grid',
-        headStyles: { fillColor: [37, 99, 235], textColor: 255, fontSize: 8, fontStyle: 'bold' },
-        bodyStyles: { fontSize: 7 },
-        didParseCell: (data) => {
-          if (data.section === 'body') {
-            const rowIndex = data.row.index;
-            const item = currentInventoryItems[rowIndex];
-            if (item) {
-              const status = getExpiryStatus(item);
-              if (status !== 'normal') { if (data.column.index === 1 || data.column.index === 5) { data.cell.styles.textColor = [220, 38, 38]; data.cell.styles.fontStyle = 'bold'; } }
-              if (data.column.index === 4 && typeof item.selisih === 'number') {
-                if (item.selisih < 0) data.cell.styles.textColor = [220, 38, 38];
-                if (item.selisih > 0) data.cell.styles.textColor = [37, 99, 235];
-                data.cell.styles.fontStyle = 'bold';
-              }
-            }
-          }
-        }
-      });
-      doc.addPage();
-      doc.setFontSize(14); doc.setFont('helvetica', 'bold'); doc.text('LEMBAR PENGESAHAN STOCK OPNAME', 14, 20);
-      doc.setFontSize(10); doc.text(`Unit: ${activeTab} | Periode: ${periodStr}`, 14, 28); doc.line(14, 32, 196, 32);
-      const sig = currentSignatures.supervisor;
-      doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.text('Supervisor Unit / Petugas Farmasi', 14, 45);
-      if (sig.nama && sig.nip) {
-        const qrData = encodeURIComponent(`Verified Stock Opname: ${sig.nama} - NIP: ${sig.nip} - Dept: ${activeTab} - Time: ${sig.timestamp || formattedDate}`);
-        const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${qrData}`;
-        const qrBase64 = await fetchImageAsBase64(qrUrl);
-        if (qrBase64) doc.addImage(qrBase64, 'PNG', 14, 50, 40, 40);
-        doc.setFontSize(8); doc.setFont('helvetica', 'italic'); doc.text(`Signed at: ${sig.timestamp}`, 14, 93);
-      } else { doc.text("___________________", 14, 85); }
-      doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.text(sig.nama || '___________________', 14, 100); doc.setFont('helvetica', 'normal'); doc.text(`NIP: ${sig.nip || '___________________'}`, 14, 105);
-    } else if (view === 'supervision') {
-      const rows: any[] = [];
-      currentSupervisionSections.forEach(section => {
-        rows.push([{ content: section.title, colSpan: 4, styles: { fillColor: [240, 240, 240], fontStyle: 'bold' } }]);
-        section.items.forEach(item => { rows.push([ item.uraian, item.sesuai === true ? 'V' : (item.sesuai === false ? 'X' : '-'), item.temuan || '-', item.tindakLanjut || '-' ]); });
-      });
-      autoTable(doc, {
-        startY: 35,
-        head: [['URAIAN', 'SESUAI', 'TEMUAN', 'TINDAK LANJUT']],
-        body: rows,
-        theme: 'grid',
-        headStyles: { fillColor: [37, 99, 235], textColor: 255, fontSize: 8, fontStyle: 'bold' },
-        bodyStyles: { fontSize: 7 },
-        didParseCell: (data) => { if (data.section === 'body' && data.column.index === 1) { if (data.cell.text[0] === 'V') { data.cell.styles.textColor = [22, 163, 74]; data.cell.styles.fontStyle = 'bold'; } else if (data.cell.text[0] === 'X') { data.cell.styles.textColor = [220, 38, 38]; data.cell.styles.fontStyle = 'bold'; } } }
-      });
-      doc.addPage();
-      doc.setFontSize(14); doc.setFont('helvetica', 'bold'); doc.text('LEMBAR PENGESAHAN SUPERVISI', 14, 20);
-      doc.setFontSize(10); doc.text(`Unit: ${activeTab} | Periode: ${periodStr}`, 14, 28); doc.line(14, 32, 196, 32);
-      const roles = [{ key: 'supervisor', label: 'Supervisor' }, { key: 'kaRuang', label: 'Kepala Ruang' }, { key: 'kaInstalasi', label: 'Kepala Instalasi Farmasi' }];
-      for (let i = 0; i < roles.length; i++) {
-        const role = roles[i]; const sig = currentSignatures[role.key as keyof SupervisionSignatures]; const xPos = 14 + (i * 62);
-        doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.text(role.label, xPos, 45);
-        if (sig.nama && sig.nip) {
-          const qrData = encodeURIComponent(`Verified: ${sig.nama} - NIP: ${sig.nip} - Dept: ${activeTab} - Time: ${sig.timestamp || periodStr}`);
-          const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${qrData}`;
-          const qrBase64 = await fetchImageAsBase64(qrUrl);
-          if (qrBase64) { doc.addImage(qrBase64, 'PNG', xPos, 50, 35, 35); } else { doc.setFont('helvetica', 'italic'); doc.text("(QR Error)", xPos, 65); }
-          doc.setFontSize(7); doc.setFont('helvetica', 'italic'); doc.text(`Signed at: ${sig.timestamp}`, xPos, 88);
-        } else { doc.text("___________________", xPos, 85); }
-        doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.text(sig.nama || '___________________', xPos, 100);
-        doc.setFont('helvetica', 'normal'); doc.text(`NIP: ${sig.nip || '___________________'}`, xPos, 105);
-      }
-    }
-    doc.save(`${activeTab}_${view}_${now.toISOString().split('T')[0]}.pdf`);
-    setIsLoading(false);
-  }, [activeTab, view, currentInventoryItems, currentSupervisionSections, currentSignatures, formattedDate, now, selectedMonth, selectedYear]);
+  }, [activeTab, view, currentInventoryItems, currentSupervisionSections, currentSignatures, now, selectedMonth, selectedYear, kunciLama, kunciBaru, waktuSupervisi]);
 
   const stats = useMemo(() => {
     const itemsWithDiff = currentInventoryItems.filter(i => typeof i.selisih === 'number' && i.selisih !== 0).length;
@@ -1111,6 +1064,19 @@ const App: React.FC = () => {
             </div>
             
             <div className="flex items-center gap-3">
+              {/* Display PDF Button in Guest Mode */}
+              <button 
+                onClick={() => setIsPdfModalOpen(true)} 
+                className="flex items-center gap-1.5 px-3 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs uppercase tracking-wider transition-all shadow-sm"
+                title="Buka Tampilan PDF RSUP Surakarta"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                </svg>
+                <span>Display PDF</span>
+              </button>
+
               {/* Light/Dark Toggle */}
               <button 
                 onClick={toggleTheme} 
@@ -1273,6 +1239,30 @@ const App: React.FC = () => {
             © 2024 SUPERVISI PRO • DIGITAL SUPERVISION SYSTEM
           </p>
         </footer>
+
+        {/* PDF Display & Preview Modal for Guest Mode */}
+        <PdfPreviewModal
+          isOpen={isPdfModalOpen}
+          onClose={() => setIsPdfModalOpen(false)}
+          view={view}
+          activeBangsal={activeTab}
+          availableBangsalList={['ICU', 'IBS', ...customUnits]}
+          onBangsalChange={(newBangsal) => {
+            setActiveTab(newBangsal);
+            setRefreshId((prev) => prev + 1);
+          }}
+          selectedMonth={selectedMonth}
+          onMonthChange={setSelectedMonth}
+          selectedYear={selectedYear}
+          onYearChange={setSelectedYear}
+          items={currentInventoryItems}
+          supervisionSections={currentSupervisionSections}
+          signatures={currentSignatures}
+          nowDate={now}
+          kunciLama={kunciLama}
+          kunciBaru={kunciBaru}
+          waktuSupervisi={waktuSupervisi}
+        />
       </div>
     );
   }
@@ -1447,6 +1437,19 @@ const App: React.FC = () => {
               <button onClick={toggleTheme} className="p-2.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all border border-slate-100 dark:border-slate-800">
                 {theme === 'light' ? (<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" /></svg>) : (<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 3v1m0 16v1m9-9h-1M4 9H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>)}
               </button>
+
+              <button 
+                onClick={() => setIsPdfModalOpen(true)} 
+                disabled={isLoading} 
+                className="flex items-center gap-1.5 md:gap-2 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition-all font-bold text-[10px] md:text-xs shadow-lg shadow-indigo-100 dark:shadow-indigo-950/40"
+                title="Buka Tampilan / Display PDF RSUP Surakarta"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                </svg>
+                <span>Display PDF</span>
+              </button>
               
               <button onClick={handleExportPDF} disabled={isLoading} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:bg-blue-300 transition-all font-bold text-[10px] md:text-xs shadow-lg shadow-blue-100 dark:shadow-blue-900/10">
                 {isLoading ? (<div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>) : (<svg className="w-4 h-4 hidden md:block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>)}
@@ -1495,18 +1498,65 @@ const App: React.FC = () => {
                  <p className={`text-xl md:text-2xl font-black ${view === 'inventory' && stats.itemsWithDiff > 0 ? 'text-red-600 dark:text-red-500' : 'text-slate-900 dark:text-slate-100'}`}>{view === 'inventory' ? stats.itemsWithDiff : '-'}</p>
               </div>
             </div>
-            {view === 'supervision' && (
-              <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row items-center gap-4 transition-colors duration-300">
-                <div className="flex items-center gap-2">
-                  <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg"><svg className="w-5 h-5 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg></div>
-                  <span className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase tracking-tight">Periode Supervisi:</span>
+
+            {/* Periode & Bangsal Selector for PDF and Report Display */}
+            <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4 transition-colors duration-300">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-xl">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
                 </div>
-                <div className="flex gap-2 w-full md:w-auto">
-                  <select value={selectedMonth} onChange={(e) => setSelectedMonth(parseInt(e.target.value))} className="flex-1 md:w-40 px-3 py-2 text-xs font-bold border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 rounded-xl focus:ring-4 focus:ring-blue-500/10 outline-none transition-colors">{MONTHS.map((m, i) => <option key={m} value={i}>{m}</option>)}</select>
-                  <select value={selectedYear} onChange={(e) => setSelectedYear(parseInt(e.target.value))} className="flex-1 md:w-28 px-3 py-2 text-xs font-bold border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 rounded-xl focus:ring-4 focus:ring-blue-500/10 outline-none transition-colors">{YEARS.map(y => <option key={y} value={y}>{y}</option>)}</select>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase tracking-tight">
+                      Periode & Bangsal Laporan
+                    </span>
+                    <span className="px-2.5 py-0.5 bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 text-[10px] font-black rounded-full uppercase">
+                      Bangsal: {activeTab}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold mt-0.5">
+                    Memilih periode & bangsal langsung di dalam app untuk sinkronisasi header PDF RSUP Surakarta
+                  </p>
                 </div>
               </div>
-            )}
+
+              <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+                <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700">
+                  <span className="text-[10px] font-black uppercase text-slate-400">Periode:</span>
+                  <select 
+                    value={selectedMonth} 
+                    onChange={(e) => setSelectedMonth(parseInt(e.target.value, 10))} 
+                    className="bg-transparent text-xs font-bold text-slate-800 dark:text-slate-100 outline-none cursor-pointer"
+                  >
+                    {MONTHS.map((m, i) => (
+                      <option key={m} value={i} className="dark:bg-slate-800 dark:text-white">{m}</option>
+                    ))}
+                  </select>
+                  <select 
+                    value={selectedYear} 
+                    onChange={(e) => setSelectedYear(parseInt(e.target.value, 10))} 
+                    className="bg-transparent text-xs font-bold text-slate-800 dark:text-slate-100 outline-none cursor-pointer"
+                  >
+                    {YEARS.map(y => (
+                      <option key={y} value={y} className="dark:bg-slate-800 dark:text-white">{y}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <button
+                  onClick={() => setIsPdfModalOpen(true)}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-indigo-50 dark:bg-indigo-900/30 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 rounded-xl text-xs font-bold transition-all border border-indigo-200 dark:border-indigo-800"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                  </svg>
+                  <span>Lihat Display PDF</span>
+                </button>
+              </div>
+            </div>
             <div className="relative flex flex-col">
               <div className={`transition-all duration-300 ${isLoading ? 'opacity-30 blur-sm pointer-events-none' : 'opacity-100'}`}>
                 {view === 'inventory' ? (
@@ -1527,6 +1577,11 @@ const App: React.FC = () => {
                     key={`${activeTab}-sup-${refreshId}`} 
                     sections={currentSupervisionSections} 
                     signatures={currentSignatures} 
+                    kunciLama={kunciLama}
+                    kunciBaru={kunciBaru}
+                    waktuSupervisi={waktuSupervisi}
+                    bangsalName={activeTab}
+                    onUpdateMetadata={handleUpdateMetadata}
                     onUpdateItem={handleUpdateSupervision} 
                     onUpdateSignature={handleUpdateSignature} 
                     onAddCriteria={handleAddCriteria}
@@ -1752,6 +1807,29 @@ const App: React.FC = () => {
           </div>
         </div>
       )}
+      {/* PDF Display & Preview Modal for Admin Mode */}
+      <PdfPreviewModal
+        isOpen={isPdfModalOpen}
+        onClose={() => setIsPdfModalOpen(false)}
+        view={view}
+        activeBangsal={activeTab}
+        availableBangsalList={['ICU', 'IBS', ...customUnits]}
+        onBangsalChange={(newBangsal) => {
+          setActiveTab(newBangsal);
+          setRefreshId((prev) => prev + 1);
+        }}
+        selectedMonth={selectedMonth}
+        onMonthChange={setSelectedMonth}
+        selectedYear={selectedYear}
+        onYearChange={setSelectedYear}
+        items={currentInventoryItems}
+        supervisionSections={currentSupervisionSections}
+        signatures={currentSignatures}
+        nowDate={now}
+        kunciLama={kunciLama}
+        kunciBaru={kunciBaru}
+        waktuSupervisi={waktuSupervisi}
+      />
     </div>
   );
 };
